@@ -12,24 +12,21 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 import threading
 import os
+from datetime import datetime
 
 warnings.filterwarnings('ignore')
 
-# 设置matplotlib中文字体
+# 设置matplotlib中文字体和样式
 plt.rcParams['font.sans-serif'] = ['SimHei', 'Arial Unicode MS', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
+sns.set_style("whitegrid")
+sns.set_palette("husl")
 
 
 class BubbleSortNetwork:
     """冒泡排序网络类"""
 
     def __init__(self, n: int):
-        """
-        初始化n维冒泡排序网络
-
-        Args:
-            n: 排列的长度
-        """
         self.n = n
         self.nodes = self._generate_nodes()
         self.node_to_idx = {node: idx for idx, node in enumerate(self.nodes)}
@@ -44,12 +41,11 @@ class BubbleSortNetwork:
         return permutations
 
     def _generate_adjacency_list(self) -> Dict[str, List[str]]:
-        """生成邻接表：交换相邻位置的排列"""
+        """生成邻接表"""
         adj_list = {}
         for node in self.nodes:
             neighbors = []
             for i in range(self.n - 1):
-                # 交换位置i和i+1
                 neighbor = list(node)
                 neighbor[i], neighbor[i + 1] = neighbor[i + 1], neighbor[i]
                 neighbors.append(''.join(neighbor))
@@ -78,70 +74,10 @@ class BubbleSortNetwork:
             "维度": self.n,
             "节点数": len(self.nodes),
             "边数": len(self.edges),
-            "平均度": self.n - 1,  # 冒泡排序网络是(n-1)-正则图
+            "平均度": self.n - 1,
             "是否为正则图": True,
             "正则度": self.n - 1
         }
-
-    def visualize_network(self, highlight_nodes: Set[str] = None, save_path: str = None):
-        """可视化网络（使用简化的表示）"""
-        if len(self.nodes) > 100:
-            print("警告：网络过大，可视化可能不清晰")
-
-        # 创建图形
-        plt.figure(figsize=(12, 10))
-
-        if len(self.nodes) <= 30:
-            # 对于小型网络，使用力导向布局
-            try:
-                import networkx as nx
-                G = nx.Graph()
-                G.add_nodes_from(self.nodes)
-                G.add_edges_from(self.edges)
-
-                # 使用spring布局
-                pos = nx.spring_layout(G, seed=42)
-
-                # 绘制节点
-                node_colors = []
-                for node in self.nodes:
-                    if highlight_nodes and node in highlight_nodes:
-                        node_colors.append('red')  # 故障节点
-                    else:
-                        node_colors.append('lightblue')
-
-                nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=500)
-                nx.draw_networkx_edges(G, pos, alpha=0.5)
-                nx.draw_networkx_labels(G, pos, font_size=8)
-
-                plt.title(f"{self.n}维冒泡排序网络 (节点数: {len(self.nodes)}, 边数: {len(self.edges)})")
-                plt.axis('off')
-            except ImportError:
-                print("警告：未安装networkx库，无法进行详细可视化")
-                self._simple_visualization(highlight_nodes)
-
-        else:
-            # 对于大型网络，显示度分布
-            degrees = [len(self.adj_list[node]) for node in self.nodes]
-            plt.hist(degrees, bins=range(min(degrees), max(degrees) + 2), alpha=0.7, color='blue', edgecolor='black')
-            plt.xlabel('节点度')
-            plt.ylabel('频率')
-            plt.title(f"{self.n}维冒泡排序网络度分布 (平均度: {np.mean(degrees):.2f})")
-            plt.grid(True, alpha=0.3)
-
-        if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches='tight')
-            print(f"网络可视化已保存到: {save_path}")
-
-        plt.tight_layout()
-        plt.show()
-
-    def _simple_visualization(self, highlight_nodes: Set[str] = None):
-        """简单可视化（当networkx不可用时）"""
-        print(f"{self.n}维冒泡排序网络")
-        print(f"节点数: {len(self.nodes)}")
-        print(f"边数: {len(self.edges)}")
-        print(f"故障节点: {highlight_nodes if highlight_nodes else '无'}")
 
 
 class PMCModel:
@@ -151,69 +87,33 @@ class PMCModel:
         self.network = network
 
     def generate_symptoms(self, fault_nodes: Set[str]) -> Dict[Tuple[str, str], int]:
-        """
-        根据PMC模型生成症状集
-
-        PMC规则：
-        - 如果u和v都正常: σ(u,v)=0
-        - 如果u正常但v故障: σ(u,v)=1
-        - 如果u故障: σ(u,v)不可靠(0或1随机)
-        """
+        """根据PMC模型生成症状集"""
         symptoms = {}
 
         for node in self.network.nodes:
             for neighbor in self.network.get_neighbors(node):
                 u, v = node, neighbor
 
-                if (v, u) in symptoms:  # 避免重复测试
+                if (v, u) in symptoms:
                     continue
 
                 u_fault = u in fault_nodes
                 v_fault = v in fault_nodes
 
                 if not u_fault and not v_fault:
-                    # 两者都正常
                     symptoms[(u, v)] = 0
                     symptoms[(v, u)] = 0
                 elif not u_fault and v_fault:
-                    # u正常，v故障
                     symptoms[(u, v)] = 1
-                    # v故障，测试结果不可靠
                     symptoms[(v, u)] = random.randint(0, 1)
                 elif u_fault and not v_fault:
-                    # u故障，测试结果不可靠
                     symptoms[(u, v)] = random.randint(0, 1)
-                    # v正常，u故障
                     symptoms[(v, u)] = 1
                 else:
-                    # 两者都故障，测试结果都不可靠
                     symptoms[(u, v)] = random.randint(0, 1)
                     symptoms[(v, u)] = random.randint(0, 1)
 
         return symptoms
-
-    def save_symptoms_to_excel(self, symptoms: Dict[Tuple[str, str], int], filepath: str):
-        """保存症状集到Excel"""
-        data = []
-        for (u, v), sigma in symptoms.items():
-            data.append({'测试者': u, '被测试者': v, '测试结果': sigma})
-        df = pd.DataFrame(data)
-        df.to_excel(filepath, index=False)
-
-    def load_symptoms_from_excel(self, filepath: str) -> Dict[Tuple[str, str], int]:
-        """从Excel文件加载症状集"""
-        try:
-            df = pd.read_excel(filepath)
-            symptoms = {}
-            for _, row in df.iterrows():
-                u = str(row['测试者'])
-                v = str(row['被测试者'])
-                sigma = int(row['测试结果'])
-                symptoms[(u, v)] = sigma
-            return symptoms
-        except Exception as e:
-            print(f"加载症状集失败: {e}")
-            return {}
 
 
 class TRFI_PMC:
@@ -222,11 +122,6 @@ class TRFI_PMC:
     def __init__(self, network, symptoms: Dict[Tuple[str, str], int]):
         self.network = network
         self.symptoms = symptoms
-        self.groups = []  # 存储分组的节点列表
-        self.group_of_node = {}  # 节点到组的映射
-        self.faulty_groups = set()  # 故障组索引
-        self.fault_free_groups = set()  # 正常组索引
-        self.unclassified_groups = set()  # 未分类组索引
 
     def _is_00_edge(self, u: str, v: str) -> bool:
         """检查是否为(0,0)边"""
@@ -234,17 +129,17 @@ class TRFI_PMC:
             return self.symptoms[(u, v)] == 0 and self.symptoms[(v, u)] == 0
         return False
 
-    def divide_groups(self):
-        """分组阶段：基于(0,0)边进行分组"""
+    def run(self, t: int) -> List[str]:
+        """运行TRFI-PMC算法"""
+        # 分组阶段
+        groups = []
+        group_of_node = {}
         visited = set()
-        self.groups = []
-        self.group_of_node = {}
 
         for node in self.network.nodes:
             if node in visited:
                 continue
 
-            # 开始新的组
             group = []
             queue = deque([node])
 
@@ -255,141 +150,94 @@ class TRFI_PMC:
 
                 visited.add(current)
                 group.append(current)
-                self.group_of_node[current] = len(self.groups)
+                group_of_node[current] = len(groups)
 
-                # 检查邻居
                 for neighbor in self.network.get_neighbors(current):
                     if neighbor not in visited and self._is_00_edge(current, neighbor):
                         queue.append(neighbor)
 
-            if group:  # 添加非空组
-                self.groups.append(group)
+            if group:
+                groups.append(group)
 
         # 初始化组状态
-        self.unclassified_groups = set(range(len(self.groups)))
-        self.faulty_groups = set()
-        self.fault_free_groups = set()
+        unclassified = set(range(len(groups)))
+        faulty_groups = set()
+        fault_free_groups = set()
 
-    def first_round_detection(self, t: int):
-        """第一轮检测：根据(0,1)或(1,0)边识别故障组"""
+        # 第一轮检测
         to_remove = set()
-
-        for group_idx in self.unclassified_groups:
-            group = self.groups[group_idx]
-
+        for group_idx in unclassified:
+            group = groups[group_idx]
             for node in group:
                 for neighbor in self.network.get_neighbors(node):
-                    # 检查邻居是否在同一组
                     if neighbor in group:
                         continue
 
-                    # 获取测试结果
                     sigma_uv = self.symptoms.get((node, neighbor), -1)
                     sigma_vu = self.symptoms.get((neighbor, node), -1)
 
                     if sigma_uv == 0 and sigma_vu == 1:
-                        # 根据Lemma 2，node是故障的
-                        self.faulty_groups.add(group_idx)
+                        faulty_groups.add(group_idx)
                         to_remove.add(group_idx)
                         break
                     elif sigma_uv == 1 and sigma_vu == 0:
-                        # 根据Lemma 2，neighbor是故障的，但neighbor可能在其他组
-                        neighbor_group = self.group_of_node.get(neighbor)
+                        neighbor_group = group_of_node.get(neighbor)
                         if neighbor_group is not None:
-                            self.faulty_groups.add(neighbor_group)
+                            faulty_groups.add(neighbor_group)
                             to_remove.add(neighbor_group)
                         break
                 if group_idx in to_remove:
                     break
 
-        # 更新未分类组
-        self.unclassified_groups -= to_remove
+        unclassified -= to_remove
 
-    def second_round_detection(self, t: int):
-        """第二轮检测：基于组大小判断"""
+        # 第二轮检测
         to_remove = set()
-
-        for group_idx in list(self.unclassified_groups):
-            group_size = len(self.groups[group_idx])
-            remaining_faults = t - len(self.faulty_groups)
+        for group_idx in list(unclassified):
+            group_size = len(groups[group_idx])
+            remaining_faults = t - len(faulty_groups)
 
             if group_size > remaining_faults:
-                # 组大小超过剩余可容忍故障数，认为是正常组
-                self.fault_free_groups.add(group_idx)
+                fault_free_groups.add(group_idx)
                 to_remove.add(group_idx)
 
-        self.unclassified_groups -= to_remove
+        unclassified -= to_remove
 
-    def third_round_detection(self, t: int):
-        """第三轮检测：基于邻居组判断"""
+        # 第三轮检测
         to_remove = set()
-
-        for group_idx in list(self.unclassified_groups):
-            # 获取未分类邻居组的数量
+        for group_idx in list(unclassified):
             unclassified_neighbor_count = 0
-
-            for node in self.groups[group_idx]:
+            for node in groups[group_idx]:
                 for neighbor in self.network.get_neighbors(node):
-                    neighbor_group = self.group_of_node.get(neighbor)
+                    neighbor_group = group_of_node.get(neighbor)
                     if (neighbor_group is not None and
-                            neighbor_group in self.unclassified_groups and
+                            neighbor_group in unclassified and
                             neighbor_group != group_idx):
                         unclassified_neighbor_count += 1
 
-            remaining_faults = t - len(self.faulty_groups)
+            remaining_faults = t - len(faulty_groups)
 
             if unclassified_neighbor_count > remaining_faults:
-                # 未分类邻居组数量超过剩余可容忍故障数，认为是故障组
-                self.faulty_groups.add(group_idx)
+                faulty_groups.add(group_idx)
                 to_remove.add(group_idx)
 
-        self.unclassified_groups -= to_remove
+        unclassified -= to_remove
+        fault_free_groups.update(unclassified)
 
-    def final_classification(self):
-        """最终分类：剩余未分类组标记为正常"""
-        self.fault_free_groups.update(self.unclassified_groups)
-        self.unclassified_groups.clear()
-
-    def get_faulty_nodes(self) -> List[str]:
-        """获取诊断出的故障节点"""
+        # 收集故障节点
         faulty_nodes = []
-        for group_idx in self.faulty_groups:
-            faulty_nodes.extend(self.groups[group_idx])
+        for group_idx in faulty_groups:
+            faulty_nodes.extend(groups[group_idx])
+
         return faulty_nodes
-
-    def get_fault_free_nodes(self) -> List[str]:
-        """获取诊断出的正常节点"""
-        fault_free_nodes = []
-        for group_idx in self.fault_free_groups:
-            fault_free_nodes.extend(self.groups[group_idx])
-        return fault_free_nodes
-
-    def run(self, t: int) -> List[str]:
-        """
-        运行TRFI-PMC算法
-
-        Args:
-            t: 诊断度（最大可容忍故障数）
-
-        Returns:
-            诊断出的故障节点列表
-        """
-        self.divide_groups()
-        self.first_round_detection(t)
-        self.second_round_detection(t)
-        self.third_round_detection(t)
-        self.final_classification()
-        return self.get_faulty_nodes()
 
 
 class GeneralNetwork:
-    """通用网络类（用于功能2）"""
+    """通用网络类"""
 
     def __init__(self, nodes: List[str], edges: List[Tuple[str, str]]):
         self.nodes = nodes
         self.edges = edges
-        self.node_to_idx = {node: idx for idx, node in enumerate(nodes)}
-        self.idx_to_node = {idx: node for idx, node in enumerate(nodes)}
         self.adj_list = self._generate_adjacency_list()
 
     def _generate_adjacency_list(self) -> Dict[str, List[str]]:
@@ -404,127 +252,63 @@ class GeneralNetwork:
         """获取节点的邻居"""
         return self.adj_list.get(node, [])
 
-    def get_network_info(self) -> Dict[str, Any]:
-        """获取网络信息"""
-        degrees = [len(neighbors) for neighbors in self.adj_list.values()]
-        return {
-            "节点数": len(self.nodes),
-            "边数": len(self.edges),
-            "平均度": np.mean(degrees) if degrees else 0,
-            "最大度": max(degrees) if degrees else 0,
-            "最小度": min(degrees) if degrees else 0,
-        }
-
 
 class Evaluator:
-    """评估器：计算各种性能指标"""
+    """评估器：计算5个核心指标"""
 
     def __init__(self, true_faulty: Set[str], predicted_faulty: Set[str], all_nodes: List[str]):
-        """
-        初始化评估器
-
-        Args:
-            true_faulty: 真实的故障节点集合
-            predicted_faulty: 预测的故障节点集合
-            all_nodes: 所有节点列表
-        """
         self.true_faulty = true_faulty
         self.predicted_faulty = predicted_faulty
         self.all_nodes = set(all_nodes)
 
-        # 计算基本统计量
+        # 计算混淆矩阵
         self.TP = len(true_faulty & predicted_faulty)  # 真正例
         self.FP = len(predicted_faulty - true_faulty)  # 假正例
         self.TN = len((self.all_nodes - true_faulty) - predicted_faulty)  # 真负例
         self.FN = len(true_faulty - predicted_faulty)  # 假负例
 
-    def calculate_metrics(self) -> Dict[str, float]:
-        """计算所有评估指标"""
+    def calculate_all_metrics(self) -> Dict[str, float]:
+        """计算所有5个指标"""
         metrics = {}
 
-        # 准确率
+        # 准确率 (Accuracy)
         if self.TP + self.TN + self.FP + self.FN > 0:
-            metrics['准确率'] = (self.TP + self.TN) / (self.TP + self.TN + self.FP + self.FN)
+            metrics['ACCR'] = (self.TP + self.TN) / (self.TP + self.TN + self.FP + self.FN)
         else:
-            metrics['准确率'] = 0.0
+            metrics['ACCR'] = 0.0
 
-        # 真负率
+        # 真负率 (True Negative Rate)
         if self.TN + self.FP > 0:
-            metrics['真负率'] = self.TN / (self.TN + self.FP)
+            metrics['TNR'] = self.TN / (self.TN + self.FP)
         else:
-            metrics['真负率'] = 0.0
+            metrics['TNR'] = 0.0
 
-        # 假正率
+        # 假正率 (False Positive Rate)
         if self.TN + self.FP > 0:
-            metrics['假正率'] = self.FP / (self.TN + self.FP)
+            metrics['FPR'] = self.FP / (self.TN + self.FP)
         else:
-            metrics['假正率'] = 0.0
+            metrics['FPR'] = 0.0
 
-        # 真正率（召回率）
+        # 真正率 (True Positive Rate / Recall)
         if self.TP + self.FN > 0:
-            metrics['真正率'] = self.TP / (self.TP + self.FN)
+            metrics['TPR'] = self.TP / (self.TP + self.FN)
         else:
-            metrics['真正率'] = 0.0
+            metrics['TPR'] = 0.0
 
-        # 精确率
+        # 精确率 (Precision)
         if self.TP + self.FP > 0:
-            metrics['精确率'] = self.TP / (self.TP + self.FP)
+            metrics['Precision'] = self.TP / (self.TP + self.FP)
         else:
-            metrics['精确率'] = 0.0
-
-        # F1分数
-        if metrics['精确率'] + metrics['真正率'] > 0:
-            metrics['F1分数'] = 2 * (metrics['精确率'] * metrics['真正率']) / (metrics['精确率'] + metrics['真正率'])
-        else:
-            metrics['F1分数'] = 0.0
+            metrics['Precision'] = 0.0
 
         return metrics
 
-    def plot_confusion_matrix(self, save_path: str = None):
-        """绘制混淆矩阵"""
-        confusion_matrix = np.array([
+    def get_confusion_matrix(self) -> np.ndarray:
+        """获取混淆矩阵"""
+        return np.array([
             [self.TP, self.FN],
             [self.FP, self.TN]
         ])
-
-        plt.figure(figsize=(8, 6))
-        sns.heatmap(confusion_matrix, annot=True, fmt='d', cmap='Blues',
-                    xticklabels=['预测故障', '预测正常'],
-                    yticklabels=['实际故障', '实际正常'])
-        plt.title('混淆矩阵')
-        plt.tight_layout()
-
-        if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches='tight')
-
-        plt.show()
-
-    def plot_metrics_radar(self, metrics: Dict[str, float], save_path: str = None):
-        """绘制指标雷达图"""
-        categories = list(metrics.keys())
-        values = list(metrics.values())
-
-        # 雷达图需要闭合
-        categories += [categories[0]]
-        values += [values[0]]
-
-        # 计算角度
-        angles = np.linspace(0, 2 * np.pi, len(categories), endpoint=True).tolist()
-
-        fig, ax = plt.subplots(figsize=(8, 8), subplot_kw=dict(projection='polar'))
-        ax.plot(angles, values, 'o-', linewidth=2)
-        ax.fill(angles, values, alpha=0.25)
-        ax.set_xticks(angles[:-1])
-        ax.set_xticklabels(categories[:-1])
-        ax.set_ylim(0, 1)
-        ax.set_title('性能指标雷达图')
-        ax.grid(True)
-
-        if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches='tight')
-
-        plt.tight_layout()
-        plt.show()
 
 
 class TRFI_PMC_System:
@@ -532,58 +316,50 @@ class TRFI_PMC_System:
 
     def __init__(self):
         self.network = None
-        self.pmc_model = None
-        self.diagnoser = None
         self.true_faulty_nodes = set()
         self.diagnosed_faulty_nodes = set()
-        self.metrics_history = []  # 存储多次实验的指标
+        self.metrics_history = []
+        self.experiment_times = []
 
     def function1(self, n: int, num_faults: int, num_experiments: int = 1) -> Dict[str, Any]:
-        """
-        功能1：合成网络诊断
-
-        Args:
-            n: 网络维度
-            num_faults: 故障节点数
-            num_experiments: 实验次数
-
-        Returns:
-            包含结果的字典
-        """
+        """功能1：合成网络诊断"""
         print(f"功能1：合成网络诊断")
         print(f"网络维度: {n}, 故障节点数: {num_faults}, 实验次数: {num_experiments}")
 
         self.metrics_history = []
+        self.experiment_times = []
         all_results = []
 
         for exp in range(num_experiments):
             print(f"\n实验 {exp + 1}/{num_experiments}")
+            start_time = time.time()
 
             # 创建冒泡排序网络
             self.network = BubbleSortNetwork(n)
             network_info = self.network.get_network_info()
 
-            # 创建PMC模型
-            self.pmc_model = PMCModel(self.network)
-
             # 随机选择故障节点
             if num_faults > len(self.network.nodes):
-                print(f"警告：故障节点数超过总节点数，将设置为总节点数的10%")
                 num_faults = max(1, int(len(self.network.nodes) * 0.1))
 
             self.true_faulty_nodes = set(random.sample(self.network.nodes, num_faults))
 
             # 生成症状集
-            symptoms = self.pmc_model.generate_symptoms(self.true_faulty_nodes)
+            pmc_model = PMCModel(self.network)
+            symptoms = pmc_model.generate_symptoms(self.true_faulty_nodes)
 
             # 运行诊断
-            self.diagnoser = TRFI_PMC(self.network, symptoms)
-            diagnosed_nodes = self.diagnoser.run(num_faults)
+            diagnoser = TRFI_PMC(self.network, symptoms)
+            diagnosed_nodes = diagnoser.run(num_faults)
             self.diagnosed_faulty_nodes = set(diagnosed_nodes)
 
             # 评估结果
             evaluator = Evaluator(self.true_faulty_nodes, self.diagnosed_faulty_nodes, self.network.nodes)
-            metrics = evaluator.calculate_metrics()
+            metrics = evaluator.calculate_all_metrics()
+
+            end_time = time.time()
+            exp_time = end_time - start_time
+            self.experiment_times.append(exp_time)
 
             # 保存结果
             result = {
@@ -591,17 +367,21 @@ class TRFI_PMC_System:
                 "网络信息": network_info,
                 "真实故障节点": list(self.true_faulty_nodes),
                 "诊断故障节点": list(self.diagnosed_faulty_nodes),
-                "指标": metrics
+                "指标": metrics,
+                "运行时间": exp_time
             }
             all_results.append(result)
             self.metrics_history.append(metrics)
 
             # 显示本次实验指标
-            print(f"准确率: {metrics['准确率'] * 100:.2f}%")
-            print(f"真正率: {metrics['真正率'] * 100:.2f}%")
-            print(f"精确率: {metrics['精确率'] * 100:.2f}%")
+            print(f"ACCR: {metrics['ACCR'] * 100:.2f}%")
+            print(f"TNR: {metrics['TNR'] * 100:.2f}%")
+            print(f"FPR: {metrics['FPR'] * 100:.2f}%")
+            print(f"TPR: {metrics['TPR'] * 100:.2f}%")
+            print(f"Precision: {metrics['Precision'] * 100:.2f}%")
+            print(f"运行时间: {exp_time:.2f}秒")
 
-        # 计算平均指标（多次实验时）
+        # 计算平均指标
         avg_metrics = {}
         if num_experiments > 1:
             print(f"\n{'=' * 60}")
@@ -611,6 +391,7 @@ class TRFI_PMC_System:
                 avg_value = np.mean([m[key] for m in self.metrics_history])
                 avg_metrics[key] = avg_value
                 print(f"{key}: {avg_value * 100:.2f}%")
+            print(f"平均运行时间: {np.mean(self.experiment_times):.2f}秒")
 
         # 保存数据
         self._save_function1_data(all_results, n, num_faults)
@@ -621,97 +402,61 @@ class TRFI_PMC_System:
             "网络信息": network_info
         }
 
-    def function2(self, nodes: List[str], edges: List[Tuple[str, str]], symptoms: Dict[Tuple[str, str], int]) -> Dict[
-        str, Any]:
-        """
-        功能2：真实网络诊断（输入症状集）
-
-        Args:
-            nodes: 节点列表
-            edges: 边列表
-            symptoms: 症状集
-
-        Returns:
-            包含结果的字典
-        """
+    def function2(self, nodes: List[str], edges: List[Tuple[str, str]],
+                  symptoms: Dict[Tuple[str, str], int]) -> Dict[str, Any]:
+        """功能2：真实网络诊断（输入症状集）"""
         print(f"功能2：真实网络诊断")
 
         # 创建通用网络
         self.network = GeneralNetwork(nodes, edges)
-        network_info = self.network.get_network_info()
-
-        # 由于功能2没有提供真实故障节点，我们无法计算指标
-        # 但我们可以运行诊断算法
-        print(f"网络信息: 节点数={network_info['节点数']}, 边数={network_info['边数']}")
 
         # 运行诊断（使用节点数作为诊断度t的估计）
-        t = min(10, len(nodes) // 10)  # 简单估计
-        self.diagnoser = TRFI_PMC(self.network, symptoms)
-        diagnosed_nodes = self.diagnoser.run(t)
+        t = min(10, len(nodes) // 10)
+        diagnoser = TRFI_PMC(self.network, symptoms)
+        diagnosed_nodes = diagnoser.run(t)
         self.diagnosed_faulty_nodes = set(diagnosed_nodes)
 
         print(f"诊断出 {len(self.diagnosed_faulty_nodes)} 个故障节点")
 
-        # 保存结果
-        self._save_function2_data(nodes, edges, symptoms, diagnosed_nodes)
-
         return {
-            "网络信息": network_info,
             "诊断故障节点": list(self.diagnosed_faulty_nodes),
             "诊断度t": t
         }
 
-    def function3(self, nodes: List[str], edges: List[Tuple[str, str]], n: int, num_faults: int) -> Dict[str, Any]:
-        """
-        功能3：真实网络诊断（生成症状集）
-
-        Args:
-            nodes: 节点列表
-            edges: 边列表
-            n: 网络维度（用于PMC模型）
-            num_faults: 故障节点数
-
-        Returns:
-            包含结果的字典
-        """
+    def function3(self, nodes: List[str], edges: List[Tuple[str, str]],
+                  n: int, num_faults: int) -> Dict[str, Any]:
+        """功能3：真实网络诊断（生成症状集）"""
         print(f"功能3：真实网络诊断（生成症状集）")
 
         # 创建通用网络
         self.network = GeneralNetwork(nodes, edges)
-        network_info = self.network.get_network_info()
-
-        # 创建PMC模型
-        self.pmc_model = PMCModel(self.network)
 
         # 随机选择故障节点
         if num_faults > len(nodes):
-            print(f"警告：故障节点数超过总节点数，将设置为总节点数的10%")
             num_faults = max(1, int(len(nodes) * 0.1))
 
         self.true_faulty_nodes = set(random.sample(nodes, num_faults))
 
         # 生成症状集
-        symptoms = self.pmc_model.generate_symptoms(self.true_faulty_nodes)
+        pmc_model = PMCModel(self.network)
+        symptoms = pmc_model.generate_symptoms(self.true_faulty_nodes)
 
         # 运行诊断
-        self.diagnoser = TRFI_PMC(self.network, symptoms)
-        diagnosed_nodes = self.diagnoser.run(num_faults)
+        diagnoser = TRFI_PMC(self.network, symptoms)
+        diagnosed_nodes = diagnoser.run(num_faults)
         self.diagnosed_faulty_nodes = set(diagnosed_nodes)
 
         # 评估结果
         evaluator = Evaluator(self.true_faulty_nodes, self.diagnosed_faulty_nodes, nodes)
-        metrics = evaluator.calculate_metrics()
+        metrics = evaluator.calculate_all_metrics()
 
-        print(f"网络信息: 节点数={network_info['节点数']}, 边数={network_info['边数']}")
-        print(f"准确率: {metrics['准确率'] * 100:.2f}%")
-        print(f"真正率: {metrics['真正率'] * 100:.2f}%")
-        print(f"精确率: {metrics['精确率'] * 100:.2f}%")
-
-        # 保存结果
-        self._save_function3_data(nodes, edges, symptoms, diagnosed_nodes, self.true_faulty_nodes, metrics)
+        print(f"ACCR: {metrics['ACCR'] * 100:.2f}%")
+        print(f"TNR: {metrics['TNR'] * 100:.2f}%")
+        print(f"FPR: {metrics['FPR'] * 100:.2f}%")
+        print(f"TPR: {metrics['TPR'] * 100:.2f}%")
+        print(f"Precision: {metrics['Precision'] * 100:.2f}%")
 
         return {
-            "网络信息": network_info,
             "真实故障节点": list(self.true_faulty_nodes),
             "诊断故障节点": list(self.diagnosed_faulty_nodes),
             "指标": metrics
@@ -719,166 +464,210 @@ class TRFI_PMC_System:
 
     def _save_function1_data(self, results: List[Dict], n: int, num_faults: int):
         """保存功能1的数据"""
-        os.makedirs("results/function1", exist_ok=True)
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        os.makedirs("results", exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        # 保存网络信息
-        network_info = results[0]["网络信息"]
-        info_df = pd.DataFrame(list(network_info.items()), columns=["属性", "值"])
-        info_df.to_excel(f"results/function1/network_info_{timestamp}.xlsx", index=False)
-
-        # 保存所有实验结果
-        all_data = []
+        # 保存指标数据
+        metrics_data = []
         for result in results:
-            exp_data = {
+            metrics = result["指标"]
+            metrics_data.append({
                 "实验编号": result["实验编号"],
-                "准确率": result["指标"]["准确率"],
-                "真正率": result["指标"]["真正率"],
-                "精确率": result["指标"]["精确率"],
-                "真负率": result["指标"]["真负率"],
-                "假正率": result["指标"]["假正率"],
-                "F1分数": result["指标"]["F1分数"]
-            }
-            all_data.append(exp_data)
+                "ACCR": metrics['ACCR'],
+                "TNR": metrics['TNR'],
+                "FPR": metrics['FPR'],
+                "TPR": metrics['TPR'],
+                "Precision": metrics['Precision'],
+                "运行时间": result["运行时间"]
+            })
 
-        metrics_df = pd.DataFrame(all_data)
-        metrics_df.to_excel(f"results/function1/metrics_{timestamp}.xlsx", index=False)
+        metrics_df = pd.DataFrame(metrics_data)
+        metrics_df.to_excel(f"results/function1_metrics_{timestamp}.xlsx", index=False)
 
         # 保存最后一次实验的详细数据
-        last_result = results[-1]
-        faults_df = pd.DataFrame({
-            "真实故障节点": list(last_result["真实故障节点"]),
-            "诊断故障节点": list(last_result["诊断故障节点"])
-        })
-        faults_df.to_excel(f"results/function1/faults_{timestamp}.xlsx", index=False)
+        if results:
+            last_result = results[-1]
+            faults_df = pd.DataFrame({
+                "节点": list(last_result["真实故障节点"]) + list(last_result["诊断故障节点"]),
+                "类型": ["真实故障"] * len(last_result["真实故障节点"]) + ["诊断故障"] * len(
+                    last_result["诊断故障节点"])
+            })
+            faults_df.to_excel(f"results/function1_faults_{timestamp}.xlsx", index=False)
 
-        print(f"数据已保存到 results/function1/ 目录")
+        print(f"数据已保存到 results/ 目录")
 
-    def _save_function2_data(self, nodes: List[str], edges: List[Tuple[str, str]],
-                             symptoms: Dict[Tuple[str, str], int], diagnosed_nodes: List[str]):
-        """保存功能2的数据"""
-        os.makedirs("results/function2", exist_ok=True)
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-
-        # 保存网络数据
-        nodes_df = pd.DataFrame({"节点": nodes})
-        nodes_df.to_excel(f"results/function2/nodes_{timestamp}.xlsx", index=False)
-
-        edges_df = pd.DataFrame(edges, columns=["起点", "终点"])
-        edges_df.to_excel(f"results/function2/edges_{timestamp}.xlsx", index=False)
-
-        # 保存症状集
-        symptoms_df = pd.DataFrame([
-            {"测试者": u, "被测试者": v, "测试结果": sigma}
-            for (u, v), sigma in symptoms.items()
-        ])
-        symptoms_df.to_excel(f"results/function2/symptoms_{timestamp}.xlsx", index=False)
-
-        # 保存诊断结果
-        diagnosed_df = pd.DataFrame({"诊断故障节点": diagnosed_nodes})
-        diagnosed_df.to_excel(f"results/function2/diagnosed_faults_{timestamp}.xlsx", index=False)
-
-        print(f"数据已保存到 results/function2/ 目录")
-
-    def _save_function3_data(self, nodes: List[str], edges: List[Tuple[str, str]],
-                             symptoms: Dict[Tuple[str, str], int], diagnosed_nodes: List[str],
-                             true_faults: Set[str], metrics: Dict[str, float]):
-        """保存功能3的数据"""
-        os.makedirs("results/function3", exist_ok=True)
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-
-        # 保存网络数据
-        nodes_df = pd.DataFrame({"节点": nodes})
-        nodes_df.to_excel(f"results/function3/nodes_{timestamp}.xlsx", index=False)
-
-        edges_df = pd.DataFrame(edges, columns=["起点", "终点"])
-        edges_df.to_excel(f"results/function3/edges_{timestamp}.xlsx", index=False)
-
-        # 保存症状集
-        symptoms_df = pd.DataFrame([
-            {"测试者": u, "被测试者": v, "测试结果": sigma}
-            for (u, v), sigma in symptoms.items()
-        ])
-        symptoms_df.to_excel(f"results/function3/symptoms_{timestamp}.xlsx", index=False)
-
-        # 保存故障数据
-        faults_df = pd.DataFrame({
-            "真实故障节点": list(true_faults),
-            "诊断故障节点": list(diagnosed_nodes)
-        })
-        faults_df.to_excel(f"results/function3/faults_{timestamp}.xlsx", index=False)
-
-        # 保存指标
-        metrics_df = pd.DataFrame(list(metrics.items()), columns=["指标", "值"])
-        metrics_df.to_excel(f"results/function3/metrics_{timestamp}.xlsx", index=False)
-
-        print(f"数据已保存到 results/function3/ 目录")
-
-    def plot_experiment_results(self, save_path: str = None):
-        """绘制多次实验的结果"""
+    def plot_performance_metrics(self, save_path: str = None):
+        """绘制5个指标的性能变化图"""
         if not self.metrics_history or len(self.metrics_history) <= 1:
-            print("需要多次实验数据才能绘制结果")
+            print("需要多次实验数据才能绘制性能变化图")
             return
 
-        # 提取指标
+        # 提取数据
         experiments = list(range(1, len(self.metrics_history) + 1))
-        accuracy = [m['准确率'] for m in self.metrics_history]
-        recall = [m['真正率'] for m in self.metrics_history]
-        precision = [m['精确率'] for m in self.metrics_history]
+        metrics_names = ['ACCR', 'TNR', 'FPR', 'TPR', 'Precision']
+        metrics_data = {name: [] for name in metrics_names}
+
+        for metrics in self.metrics_history:
+            for name in metrics_names:
+                metrics_data[name].append(metrics[name] * 100)  # 转换为百分比
 
         # 创建图形
-        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+        fig, axes = plt.subplots(2, 3, figsize=(16, 10))
+        axes = axes.flatten()
 
-        # 1. 折线图
-        axes[0, 0].plot(experiments, accuracy, 'o-', label='准确率', linewidth=2, markersize=8)
-        axes[0, 0].plot(experiments, recall, 's-', label='真正率', linewidth=2, markersize=8)
-        axes[0, 0].plot(experiments, precision, '^-', label='精确率', linewidth=2, markersize=8)
-        axes[0, 0].set_xlabel('实验编号')
-        axes[0, 0].set_ylabel('指标值')
-        axes[0, 0].set_title('多次实验性能指标变化')
-        axes[0, 0].legend()
-        axes[0, 0].grid(True, alpha=0.3)
+        # 定义颜色和线型
+        colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
+        line_styles = ['-', '--', '-.', ':', '-']
+        markers = ['o', 's', '^', 'D', 'v']
 
-        # 2. 箱线图
-        data_to_plot = [accuracy, recall, precision]
-        axes[0, 1].boxplot(data_to_plot, labels=['准确率', '真正率', '精确率'])
-        axes[0, 1].set_ylabel('指标值')
-        axes[0, 1].set_title('指标分布箱线图')
-        axes[0, 1].grid(True, alpha=0.3)
+        # 1. 所有指标折线图
+        ax = axes[0]
+        for i, name in enumerate(metrics_names):
+            ax.plot(experiments, metrics_data[name],
+                    color=colors[i], linestyle=line_styles[i],
+                    marker=markers[i], linewidth=2, markersize=6,
+                    label=name, alpha=0.8)
 
-        # 3. 条形图（平均指标）
-        avg_accuracy = np.mean(accuracy)
-        avg_recall = np.mean(recall)
-        avg_precision = np.mean(precision)
+        ax.set_xlabel('实验编号', fontsize=12)
+        ax.set_ylabel('指标值 (%)', fontsize=12)
+        ax.set_title('5个性能指标变化趋势', fontsize=14, fontweight='bold')
+        ax.legend(loc='upper right', fontsize=10)
+        ax.grid(True, alpha=0.3)
+        ax.set_ylim(0, 105)
 
-        categories = ['准确率', '真正率', '精确率']
-        values = [avg_accuracy, avg_recall, avg_precision]
+        # 2-6. 单个指标详细图
+        for i, name in enumerate(metrics_names[1:], 1):
+            ax = axes[i]
+            ax.plot(experiments, metrics_data[name],
+                    color=colors[i], linestyle=line_styles[i],
+                    marker=markers[i], linewidth=2.5, markersize=8)
 
-        axes[1, 0].bar(categories, values, color=['blue', 'green', 'red'], alpha=0.7)
-        axes[1, 0].set_ylabel('平均指标值')
-        axes[1, 0].set_title('平均性能指标')
-        axes[1, 0].grid(True, alpha=0.3, axis='y')
+            # 添加平均值线
+            mean_value = np.mean(metrics_data[name])
+            ax.axhline(y=mean_value, color=colors[i], linestyle='--',
+                       alpha=0.6, linewidth=1.5, label=f'平均: {mean_value:.2f}%')
 
-        # 在条形上添加数值
-        for i, v in enumerate(values):
-            axes[1, 0].text(i, v + 0.01, f'{v:.3f}', ha='center', va='bottom')
+            # 填充区域
+            ax.fill_between(experiments, 0, metrics_data[name],
+                            color=colors[i], alpha=0.2)
 
-        # 4. 散点图（准确率 vs 精确率）
-        axes[1, 1].scatter(accuracy, precision, c=experiments, cmap='viridis', s=100, alpha=0.7)
-        axes[1, 1].set_xlabel('准确率')
-        axes[1, 1].set_ylabel('精确率')
-        axes[1, 1].set_title('准确率 vs 精确率')
-        axes[1, 1].grid(True, alpha=0.3)
+            ax.set_xlabel('实验编号', fontsize=10)
+            ax.set_ylabel('指标值 (%)', fontsize=10)
+            ax.set_title(f'{name}指标变化', fontsize=12, fontweight='bold')
+            ax.legend(loc='best', fontsize=9)
+            ax.grid(True, alpha=0.3)
+            ax.set_ylim(0, 105)
 
-        # 添加颜色条
-        plt.colorbar(axes[1, 1].collections[0], ax=axes[1, 1], label='实验编号')
+        # 7. 运行时间图
+        ax = axes[5]
+        ax.bar(experiments, self.experiment_times,
+               color='#6C5CE7', alpha=0.7, edgecolor='black')
 
-        plt.suptitle('TRFI-PMC算法多次实验性能分析', fontsize=16)
+        # 添加数值标签
+        for i, (exp, time_val) in enumerate(zip(experiments, self.experiment_times)):
+            ax.text(exp, time_val + 0.01, f'{time_val:.2f}s',
+                    ha='center', va='bottom', fontsize=9)
+
+        ax.set_xlabel('实验编号', fontsize=10)
+        ax.set_ylabel('运行时间 (秒)', fontsize=10)
+        ax.set_title('实验运行时间', fontsize=12, fontweight='bold')
+        ax.grid(True, alpha=0.3, axis='y')
+
+        plt.suptitle('TRFI-PMC算法多次实验性能分析', fontsize=16, fontweight='bold', y=1.02)
         plt.tight_layout()
 
         if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches='tight')
-            print(f"实验分析图已保存到: {save_path}")
+            plt.savefig(save_path, dpi=300, bbox_inches='tight', facecolor='white')
+            print(f"性能分析图已保存到: {save_path}")
+
+        plt.show()
+
+    def plot_metrics_comparison(self, save_path: str = None):
+        """绘制5个指标的对比图"""
+        if not self.metrics_history:
+            print("需要实验数据才能绘制对比图")
+            return
+
+        # 计算平均指标
+        metrics_names = ['ACCR', 'TNR', 'FPR', 'TPR', 'Precision']
+        avg_metrics = {}
+
+        for name in metrics_names:
+            values = [m[name] * 100 for m in self.metrics_history]  # 转换为百分比
+            avg_metrics[name] = np.mean(values)
+
+        # 创建雷达图
+        fig = plt.figure(figsize=(14, 6))
+
+        # 1. 雷达图
+        ax1 = plt.subplot(1, 3, 1, projection='polar')
+
+        # 数据准备
+        angles = np.linspace(0, 2 * np.pi, len(metrics_names), endpoint=False).tolist()
+        values = [avg_metrics[name] for name in metrics_names]
+        values += values[:1]  # 闭合雷达图
+        angles += angles[:1]
+
+        # 绘制雷达图
+        ax1.plot(angles, values, 'o-', linewidth=2, color='#FF6B6B')
+        ax1.fill(angles, values, alpha=0.25, color='#FF6B6B')
+
+        # 设置标签
+        ax1.set_xticks(angles[:-1])
+        ax1.set_xticklabels(metrics_names, fontsize=11)
+        ax1.set_ylim(0, 100)
+        ax1.set_yticks([20, 40, 60, 80, 100])
+        ax1.set_yticklabels(['20%', '40%', '60%', '80%', '100%'], fontsize=9)
+        ax1.set_title('平均性能指标雷达图', fontsize=13, fontweight='bold', pad=20)
+
+        # 2. 条形图
+        ax2 = plt.subplot(1, 3, 2)
+
+        colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
+        bars = ax2.bar(range(len(metrics_names)), list(avg_metrics.values()),
+                       color=colors, alpha=0.8, edgecolor='black')
+
+        ax2.set_xlabel('性能指标', fontsize=11)
+        ax2.set_ylabel('平均值 (%)', fontsize=11)
+        ax2.set_title('平均性能指标对比', fontsize=13, fontweight='bold')
+        ax2.set_xticks(range(len(metrics_names)))
+        ax2.set_xticklabels(metrics_names, fontsize=10, rotation=0)
+        ax2.grid(True, alpha=0.3, axis='y')
+        ax2.set_ylim(0, 105)
+
+        # 添加数值标签
+        for bar, value in zip(bars, avg_metrics.values()):
+            height = bar.get_height()
+            ax2.text(bar.get_x() + bar.get_width() / 2., height + 1,
+                     f'{value:.2f}%', ha='center', va='bottom', fontsize=9)
+
+        # 3. 箱线图
+        ax3 = plt.subplot(1, 3, 3)
+
+        data_to_plot = []
+        for name in metrics_names:
+            values = [m[name] * 100 for m in self.metrics_history]
+            data_to_plot.append(values)
+
+        box = ax3.boxplot(data_to_plot, labels=metrics_names, patch_artist=True)
+
+        # 设置箱线图颜色
+        for patch, color in zip(box['boxes'], colors):
+            patch.set_facecolor(color)
+            patch.set_alpha(0.7)
+
+        ax3.set_xlabel('性能指标', fontsize=11)
+        ax3.set_ylabel('指标值 (%)', fontsize=11)
+        ax3.set_title('性能指标分布箱线图', fontsize=13, fontweight='bold')
+        ax3.grid(True, alpha=0.3, axis='y')
+        ax3.set_ylim(0, 105)
+
+        plt.suptitle('TRFI-PMC算法性能指标综合分析', fontsize=15, fontweight='bold', y=1.02)
+        plt.tight_layout()
+
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight', facecolor='white')
+            print(f"指标对比图已保存到: {save_path}")
 
         plt.show()
 
@@ -893,7 +682,13 @@ class TRFI_PMC_GUI:
         # 创建主窗口
         self.root = tk.Tk()
         self.root.title("冒泡排序网络故障诊断系统 (TRFI-PMC)")
-        self.root.geometry("1000x700")
+        self.root.geometry("1200x800")
+
+        # 设置图标
+        try:
+            self.root.iconbitmap(default='icon.ico')
+        except:
+            pass
 
         # 创建样式
         style = ttk.Style()
@@ -910,8 +705,9 @@ class TRFI_PMC_GUI:
         self.main_frame.columnconfigure(1, weight=1)
 
         # 创建标题
-        title_label = ttk.Label(self.main_frame, text="冒泡排序网络故障诊断系统", style='Title.TLabel')
-        title_label.grid(row=0, column=0, columnspan=3, pady=10)
+        title_label = ttk.Label(self.main_frame, text="冒泡排序网络故障诊断系统 (TRFI-PMC)",
+                                style='Title.TLabel', foreground='#2C3E50')
+        title_label.grid(row=0, column=0, columnspan=3, pady=(0, 20))
 
         # 创建功能选择区域
         self._create_function_selection()
@@ -921,115 +717,128 @@ class TRFI_PMC_GUI:
 
         # 创建状态栏
         self.status_var = tk.StringVar(value="就绪")
-        status_bar = ttk.Label(self.root, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W)
+        status_bar = ttk.Label(self.root, textvariable=self.status_var,
+                               relief=tk.SUNKEN, anchor=tk.W, foreground='#34495E')
         status_bar.grid(row=1, column=0, sticky=(tk.W, tk.E))
+
+        # 绑定关闭事件
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def _create_function_selection(self):
         """创建功能选择区域"""
         # 功能选择框架
-        func_frame = ttk.LabelFrame(self.main_frame, text="功能选择", padding="10")
+        func_frame = ttk.LabelFrame(self.main_frame, text="功能选择", padding="15")
         func_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=5, pady=5)
 
         # 功能1：合成网络诊断
-        func1_frame = ttk.Frame(func_frame)
-        func1_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=5)
+        func1_frame = ttk.LabelFrame(func_frame, text="功能1: 合成网络诊断", padding="10")
+        func1_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
 
-        ttk.Label(func1_frame, text="功能1: 合成网络诊断", style='Subtitle.TLabel').grid(row=0, column=0, columnspan=2,
-                                                                                         sticky=tk.W)
-
-        ttk.Label(func1_frame, text="网络维度 n:").grid(row=1, column=0, sticky=tk.W, padx=5)
+        # 参数输入
+        ttk.Label(func1_frame, text="网络维度 n:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
         self.n_var = tk.StringVar(value="4")
-        n_entry = ttk.Entry(func1_frame, textvariable=self.n_var, width=10)
-        n_entry.grid(row=1, column=1, sticky=tk.W, padx=5)
+        ttk.Entry(func1_frame, textvariable=self.n_var, width=12).grid(row=0, column=1, sticky=tk.W, padx=5, pady=5)
 
-        ttk.Label(func1_frame, text="故障节点数:").grid(row=2, column=0, sticky=tk.W, padx=5)
+        ttk.Label(func1_frame, text="故障节点数:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
         self.faults_var1 = tk.StringVar(value="5")
-        faults_entry1 = ttk.Entry(func1_frame, textvariable=self.faults_var1, width=10)
-        faults_entry1.grid(row=2, column=1, sticky=tk.W, padx=5)
+        ttk.Entry(func1_frame, textvariable=self.faults_var1, width=12).grid(row=1, column=1, sticky=tk.W, padx=5,
+                                                                             pady=5)
 
-        ttk.Label(func1_frame, text="实验次数:").grid(row=3, column=0, sticky=tk.W, padx=5)
-        self.exp_var = tk.StringVar(value="1")
-        exp_entry = ttk.Entry(func1_frame, textvariable=self.exp_var, width=10)
-        exp_entry.grid(row=3, column=1, sticky=tk.W, padx=5)
+        ttk.Label(func1_frame, text="实验次数:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
+        self.exp_var = tk.StringVar(value="5")
+        ttk.Entry(func1_frame, textvariable=self.exp_var, width=12).grid(row=2, column=1, sticky=tk.W, padx=5, pady=5)
 
-        func1_btn = ttk.Button(func1_frame, text="运行功能1", command=self.run_function1)
-        func1_btn.grid(row=4, column=0, columnspan=2, pady=10)
+        func1_btn = ttk.Button(func1_frame, text="运行功能1", command=self.run_function1,
+                               style='Accent.TButton')
+        func1_btn.grid(row=3, column=0, columnspan=2, pady=(10, 0))
 
         # 功能2：真实网络诊断（输入症状集）
-        func2_frame = ttk.Frame(func_frame)
-        func2_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=5)
+        func2_frame = ttk.LabelFrame(func_frame, text="功能2: 真实网络诊断（输入症状集）", padding="10")
+        func2_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
 
-        ttk.Label(func2_frame, text="功能2: 真实网络诊断（输入症状集）", style='Subtitle.TLabel').grid(row=0, column=0,
-                                                                                                     columnspan=2,
-                                                                                                     sticky=tk.W)
-
-        # 文件选择按钮
-        ttk.Label(func2_frame, text="节点文件:").grid(row=1, column=0, sticky=tk.W, padx=5)
+        # 文件选择
+        ttk.Label(func2_frame, text="节点文件:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
         self.nodes_file_var = tk.StringVar()
-        ttk.Entry(func2_frame, textvariable=self.nodes_file_var, width=30).grid(row=1, column=1, sticky=tk.W, padx=5)
-        ttk.Button(func2_frame, text="浏览", command=self.select_nodes_file).grid(row=1, column=2, padx=5)
+        ttk.Entry(func2_frame, textvariable=self.nodes_file_var, width=25).grid(row=0, column=1, sticky=tk.W, padx=5,
+                                                                                pady=5)
+        ttk.Button(func2_frame, text="浏览", command=self.select_nodes_file, width=8).grid(row=0, column=2, padx=5,
+                                                                                           pady=5)
 
-        ttk.Label(func2_frame, text="边文件:").grid(row=2, column=0, sticky=tk.W, padx=5)
+        ttk.Label(func2_frame, text="边文件:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
         self.edges_file_var = tk.StringVar()
-        ttk.Entry(func2_frame, textvariable=self.edges_file_var, width=30).grid(row=2, column=1, sticky=tk.W, padx=5)
-        ttk.Button(func2_frame, text="浏览", command=self.select_edges_file).grid(row=2, column=2, padx=5)
+        ttk.Entry(func2_frame, textvariable=self.edges_file_var, width=25).grid(row=1, column=1, sticky=tk.W, padx=5,
+                                                                                pady=5)
+        ttk.Button(func2_frame, text="浏览", command=self.select_edges_file, width=8).grid(row=1, column=2, padx=5,
+                                                                                           pady=5)
 
-        ttk.Label(func2_frame, text="症状集文件:").grid(row=3, column=0, sticky=tk.W, padx=5)
+        ttk.Label(func2_frame, text="症状集文件:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
         self.symptoms_file_var = tk.StringVar()
-        ttk.Entry(func2_frame, textvariable=self.symptoms_file_var, width=30).grid(row=3, column=1, sticky=tk.W, padx=5)
-        ttk.Button(func2_frame, text="浏览", command=self.select_symptoms_file).grid(row=3, column=2, padx=5)
+        ttk.Entry(func2_frame, textvariable=self.symptoms_file_var, width=25).grid(row=2, column=1, sticky=tk.W, padx=5,
+                                                                                   pady=5)
+        ttk.Button(func2_frame, text="浏览", command=self.select_symptoms_file, width=8).grid(row=2, column=2, padx=5,
+                                                                                              pady=5)
 
-        func2_btn = ttk.Button(func2_frame, text="运行功能2", command=self.run_function2)
-        func2_btn.grid(row=4, column=0, columnspan=3, pady=10)
+        func2_btn = ttk.Button(func2_frame, text="运行功能2", command=self.run_function2,
+                               style='Accent.TButton')
+        func2_btn.grid(row=3, column=0, columnspan=3, pady=(10, 0))
 
         # 功能3：真实网络诊断（生成症状集）
-        func3_frame = ttk.Frame(func_frame)
-        func3_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=5)
+        func3_frame = ttk.LabelFrame(func_frame, text="功能3: 真实网络诊断（生成症状集）", padding="10")
+        func3_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
 
-        ttk.Label(func3_frame, text="功能3: 真实网络诊断（生成症状集）", style='Subtitle.TLabel').grid(row=0, column=0,
-                                                                                                     columnspan=2,
-                                                                                                     sticky=tk.W)
-
-        ttk.Label(func3_frame, text="节点文件:").grid(row=1, column=0, sticky=tk.W, padx=5)
+        ttk.Label(func3_frame, text="节点文件:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
         self.nodes_file_var3 = tk.StringVar()
-        ttk.Entry(func3_frame, textvariable=self.nodes_file_var3, width=30).grid(row=1, column=1, sticky=tk.W, padx=5)
-        ttk.Button(func3_frame, text="浏览", command=self.select_nodes_file3).grid(row=1, column=2, padx=5)
+        ttk.Entry(func3_frame, textvariable=self.nodes_file_var3, width=25).grid(row=0, column=1, sticky=tk.W, padx=5,
+                                                                                 pady=5)
+        ttk.Button(func3_frame, text="浏览", command=self.select_nodes_file3, width=8).grid(row=0, column=2, padx=5,
+                                                                                            pady=5)
 
-        ttk.Label(func3_frame, text="边文件:").grid(row=2, column=0, sticky=tk.W, padx=5)
+        ttk.Label(func3_frame, text="边文件:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
         self.edges_file_var3 = tk.StringVar()
-        ttk.Entry(func3_frame, textvariable=self.edges_file_var3, width=30).grid(row=2, column=1, sticky=tk.W, padx=5)
-        ttk.Button(func3_frame, text="浏览", command=self.select_edges_file3).grid(row=2, column=2, padx=5)
+        ttk.Entry(func3_frame, textvariable=self.edges_file_var3, width=25).grid(row=1, column=1, sticky=tk.W, padx=5,
+                                                                                 pady=5)
+        ttk.Button(func3_frame, text="浏览", command=self.select_edges_file3, width=8).grid(row=1, column=2, padx=5,
+                                                                                            pady=5)
 
-        ttk.Label(func3_frame, text="网络维度 n:").grid(row=3, column=0, sticky=tk.W, padx=5)
+        ttk.Label(func3_frame, text="网络维度 n:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
         self.n_var3 = tk.StringVar(value="4")
-        ttk.Entry(func3_frame, textvariable=self.n_var3, width=10).grid(row=3, column=1, sticky=tk.W, padx=5)
+        ttk.Entry(func3_frame, textvariable=self.n_var3, width=12).grid(row=2, column=1, sticky=tk.W, padx=5, pady=5)
 
-        ttk.Label(func3_frame, text="故障节点数:").grid(row=4, column=0, sticky=tk.W, padx=5)
+        ttk.Label(func3_frame, text="故障节点数:").grid(row=3, column=0, sticky=tk.W, padx=5, pady=5)
         self.faults_var3 = tk.StringVar(value="10")
-        ttk.Entry(func3_frame, textvariable=self.faults_var3, width=10).grid(row=4, column=1, sticky=tk.W, padx=5)
+        ttk.Entry(func3_frame, textvariable=self.faults_var3, width=12).grid(row=3, column=1, sticky=tk.W, padx=5,
+                                                                             pady=5)
 
-        func3_btn = ttk.Button(func3_frame, text="运行功能3", command=self.run_function3)
-        func3_btn.grid(row=5, column=0, columnspan=3, pady=10)
+        func3_btn = ttk.Button(func3_frame, text="运行功能3", command=self.run_function3,
+                               style='Accent.TButton')
+        func3_btn.grid(row=4, column=0, columnspan=3, pady=(10, 0))
 
-        # 可视化按钮
-        viz_frame = ttk.Frame(func_frame)
-        viz_frame.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=10)
+        # 可视化按钮框架
+        viz_frame = ttk.LabelFrame(func_frame, text="可视化选项", padding="10")
+        viz_frame.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=(10, 0))
 
-        ttk.Label(viz_frame, text="可视化选项:", style='Subtitle.TLabel').grid(row=0, column=0, columnspan=2,
-                                                                               sticky=tk.W)
+        self.plot_btn = ttk.Button(viz_frame, text="绘制性能变化图",
+                                   command=self.plot_performance, state=tk.DISABLED, width=20)
+        self.plot_btn.grid(row=0, column=0, pady=5, padx=5)
 
-        self.plot_btn = ttk.Button(viz_frame, text="绘制实验分析图", command=self.plot_results, state=tk.DISABLED)
-        self.plot_btn.grid(row=1, column=0, pady=5, padx=5)
+        self.comparison_btn = ttk.Button(viz_frame, text="绘制指标对比图",
+                                         command=self.plot_comparison, state=tk.DISABLED, width=20)
+        self.comparison_btn.grid(row=0, column=1, pady=5, padx=5)
 
-        self.network_viz_btn = ttk.Button(viz_frame, text="可视化网络", command=self.visualize_network,
-                                          state=tk.DISABLED)
-        self.network_viz_btn.grid(row=1, column=1, pady=5, padx=5)
+        self.save_btn = ttk.Button(viz_frame, text="保存当前图表",
+                                   command=self.save_current_plot, state=tk.DISABLED, width=20)
+        self.save_btn.grid(row=1, column=0, pady=5, padx=5)
+
+        self.export_btn = ttk.Button(viz_frame, text="导出实验数据",
+                                     command=self.export_data, state=tk.DISABLED, width=20)
+        self.export_btn.grid(row=1, column=1, pady=5, padx=5)
 
     def _create_result_display(self):
         """创建结果显示区域"""
         # 结果显示框架
         result_frame = ttk.LabelFrame(self.main_frame, text="诊断结果", padding="10")
-        result_frame.grid(row=1, column=1, rowspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), padx=5, pady=5)
+        result_frame.grid(row=1, column=1, rowspan=2, sticky=(tk.W, tk.E, tk.N, tk.S),
+                          padx=(15, 5), pady=5)
 
         # 配置网格权重
         result_frame.columnconfigure(0, weight=1)
@@ -1043,36 +852,113 @@ class TRFI_PMC_GUI:
         metrics_tab = ttk.Frame(self.notebook)
         self.notebook.add(metrics_tab, text="性能指标")
 
-        self.metrics_text = scrolledtext.ScrolledText(metrics_tab, width=70, height=15, font=('Consolas', 10))
-        self.metrics_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        # 创建指标表格
+        columns = ("实验", "ACCR", "TNR", "FPR", "TPR", "Precision")
+        self.metrics_tree = ttk.Treeview(metrics_tab, columns=columns, show="headings", height=12)
+
+        # 设置列标题
+        for col in columns:
+            self.metrics_tree.heading(col, text=col)
+            self.metrics_tree.column(col, width=100, anchor="center")
+
+        # 添加滚动条
+        scrollbar = ttk.Scrollbar(metrics_tab, orient="vertical", command=self.metrics_tree.yview)
+        self.metrics_tree.configure(yscrollcommand=scrollbar.set)
+
+        self.metrics_tree.pack(side="left", fill="both", expand=True, padx=5, pady=5)
+        scrollbar.pack(side="right", fill="y")
+
+        # 平均指标框架
+        avg_frame = ttk.Frame(metrics_tab)
+        avg_frame.pack(fill="x", padx=5, pady=(0, 5))
+
+        ttk.Label(avg_frame, text="平均指标:", font=('Arial', 10, 'bold')).pack(side="left", padx=5)
+        self.avg_labels = {}
+        for metric in ["ACCR", "TNR", "FPR", "TPR", "Precision"]:
+            frame = ttk.Frame(avg_frame)
+            frame.pack(side="left", padx=10)
+            ttk.Label(frame, text=f"{metric}:").pack(side="left")
+            self.avg_labels[metric] = ttk.Label(frame, text="0.00%", foreground="blue", font=('Arial', 9, 'bold'))
+            self.avg_labels[metric].pack(side="left")
 
         # 网络信息标签页
         info_tab = ttk.Frame(self.notebook)
         self.notebook.add(info_tab, text="网络信息")
 
-        self.info_text = scrolledtext.ScrolledText(info_tab, width=70, height=15, font=('Consolas', 10))
+        self.info_text = scrolledtext.ScrolledText(info_tab, width=70, height=15,
+                                                   font=('Consolas', 10))
         self.info_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
         # 故障节点标签页
         faults_tab = ttk.Frame(self.notebook)
         self.notebook.add(faults_tab, text="故障节点")
 
-        self.faults_text = scrolledtext.ScrolledText(faults_tab, width=70, height=15, font=('Consolas', 10))
-        self.faults_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        # 创建两个文本区域
+        frame_left = ttk.Frame(faults_tab)
+        frame_left.pack(side="left", fill="both", expand=True, padx=(5, 2), pady=5)
+
+        ttk.Label(frame_left, text="真实故障节点:", font=('Arial', 10, 'bold')).pack(anchor="w")
+        self.true_faults_text = scrolledtext.ScrolledText(frame_left, height=12,
+                                                          font=('Consolas', 9))
+        self.true_faults_text.pack(fill="both", expand=True)
+
+        frame_right = ttk.Frame(faults_tab)
+        frame_right.pack(side="right", fill="both", expand=True, padx=(2, 5), pady=5)
+
+        ttk.Label(frame_right, text="诊断故障节点:", font=('Arial', 10, 'bold')).pack(anchor="w")
+        self.diagnosed_faults_text = scrolledtext.ScrolledText(frame_right, height=12,
+                                                               font=('Consolas', 9))
+        self.diagnosed_faults_text.pack(fill="both", expand=True)
 
         # 日志标签页
         log_tab = ttk.Frame(self.notebook)
         self.notebook.add(log_tab, text="运行日志")
 
-        self.log_text = scrolledtext.ScrolledText(log_tab, width=70, height=15, font=('Consolas', 10))
+        self.log_text = scrolledtext.ScrolledText(log_tab, width=70, height=15,
+                                                  font=('Consolas', 10))
         self.log_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-    def log_message(self, message: str):
+        # 添加日志控制按钮
+        log_control_frame = ttk.Frame(log_tab)
+        log_control_frame.pack(fill="x", padx=5, pady=(0, 5))
+
+        ttk.Button(log_control_frame, text="清空日志", command=self.clear_log, width=10).pack(side="right", padx=2)
+        ttk.Button(log_control_frame, text="保存日志", command=self.save_log, width=10).pack(side="right", padx=2)
+
+    def log_message(self, message: str, level: str = "INFO"):
         """添加日志消息"""
-        timestamp = time.strftime("%H:%M:%S")
+        timestamp = datetime.now().strftime("%H:%M:%S")
+
+        # 设置颜色
+        colors = {
+            "INFO": "black",
+            "SUCCESS": "green",
+            "WARNING": "orange",
+            "ERROR": "red"
+        }
+
+        color = colors.get(level, "black")
+
         self.log_text.insert(tk.END, f"[{timestamp}] {message}\n")
+        self.log_text.tag_add(f"color_{level}", f"end-2l linestart", f"end-2l lineend")
+        self.log_text.tag_config(f"color_{level}", foreground=color)
         self.log_text.see(tk.END)
         self.root.update()
+
+    def clear_log(self):
+        """清空日志"""
+        self.log_text.delete(1.0, tk.END)
+
+    def save_log(self):
+        """保存日志"""
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".txt",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
+        )
+        if file_path:
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(self.log_text.get(1.0, tk.END))
+            self.log_message(f"日志已保存到: {file_path}", "SUCCESS")
 
     def select_nodes_file(self):
         """选择节点文件"""
@@ -1123,17 +1009,23 @@ class TRFI_PMC_GUI:
         """运行功能1"""
         try:
             self.status_var.set("正在运行功能1...")
-            self.log_message("开始运行功能1: 合成网络诊断")
+            self.log_message("开始运行功能1: 合成网络诊断", "INFO")
 
             # 获取参数
             n = int(self.n_var.get())
             num_faults = int(self.faults_var1.get())
             num_experiments = int(self.exp_var.get())
 
-            self.log_message(f"参数: n={n}, 故障节点数={num_faults}, 实验次数={num_experiments}")
+            self.log_message(f"参数: n={n}, 故障节点数={num_faults}, 实验次数={num_experiments}", "INFO")
 
-            # 在新线程中运行，避免界面冻结
-            thread = threading.Thread(target=self._run_function1_thread, args=(n, num_faults, num_experiments))
+            # 清空结果
+            self.metrics_tree.delete(*self.metrics_tree.get_children())
+            for metric in self.avg_labels:
+                self.avg_labels[metric].config(text="0.00%")
+
+            # 在新线程中运行
+            thread = threading.Thread(target=self._run_function1_thread,
+                                      args=(n, num_faults, num_experiments))
             thread.daemon = True
             thread.start()
 
@@ -1156,20 +1048,23 @@ class TRFI_PMC_GUI:
 
             # 启用可视化按钮
             self.root.after(0, lambda: self.plot_btn.config(state=tk.NORMAL))
-            self.root.after(0, lambda: self.network_viz_btn.config(state=tk.NORMAL))
+            self.root.after(0, lambda: self.comparison_btn.config(state=tk.NORMAL))
+            self.root.after(0, lambda: self.save_btn.config(state=tk.NORMAL))
+            self.root.after(0, lambda: self.export_btn.config(state=tk.NORMAL))
 
-            self.log_message("功能1运行完成")
+            self.log_message("功能1运行完成", "SUCCESS")
             self.status_var.set("就绪")
 
         except Exception as e:
             self.root.after(0, lambda: messagebox.showerror("错误", f"运行功能1时出错: {e}"))
+            self.log_message(f"功能1运行出错: {e}", "ERROR")
             self.status_var.set("就绪")
 
     def run_function2(self):
         """运行功能2"""
         try:
             self.status_var.set("正在运行功能2...")
-            self.log_message("开始运行功能2: 真实网络诊断（输入症状集）")
+            self.log_message("开始运行功能2: 真实网络诊断（输入症状集）", "INFO")
 
             # 检查文件
             nodes_file = self.nodes_file_var.get()
@@ -1181,12 +1076,13 @@ class TRFI_PMC_GUI:
                 self.status_var.set("就绪")
                 return
 
-            self.log_message(f"节点文件: {nodes_file}")
-            self.log_message(f"边文件: {edges_file}")
-            self.log_message(f"症状集文件: {symptoms_file}")
+            self.log_message(f"节点文件: {nodes_file}", "INFO")
+            self.log_message(f"边文件: {edges_file}", "INFO")
+            self.log_message(f"症状集文件: {symptoms_file}", "INFO")
 
             # 在新线程中运行
-            thread = threading.Thread(target=self._run_function2_thread, args=(nodes_file, edges_file, symptoms_file))
+            thread = threading.Thread(target=self._run_function2_thread,
+                                      args=(nodes_file, edges_file, symptoms_file))
             thread.daemon = True
             thread.start()
 
@@ -1212,7 +1108,7 @@ class TRFI_PMC_GUI:
                 sigma = int(row.iloc[2])
                 symptoms[(u, v)] = sigma
 
-            self.log_message(f"读取数据完成: {len(nodes)}个节点, {len(edges)}条边, {len(symptoms)}条测试结果")
+            self.log_message(f"读取数据完成: {len(nodes)}个节点, {len(edges)}条边, {len(symptoms)}条测试结果", "INFO")
 
             # 运行功能2
             result = self.system.function2(nodes, edges, symptoms)
@@ -1221,18 +1117,19 @@ class TRFI_PMC_GUI:
             # 更新UI
             self.root.after(0, self._update_function2_results, result)
 
-            self.log_message("功能2运行完成")
+            self.log_message("功能2运行完成", "SUCCESS")
             self.status_var.set("就绪")
 
         except Exception as e:
             self.root.after(0, lambda: messagebox.showerror("错误", f"运行功能2时出错: {e}"))
+            self.log_message(f"功能2运行出错: {e}", "ERROR")
             self.status_var.set("就绪")
 
     def run_function3(self):
         """运行功能3"""
         try:
             self.status_var.set("正在运行功能3...")
-            self.log_message("开始运行功能3: 真实网络诊断（生成症状集）")
+            self.log_message("开始运行功能3: 真实网络诊断（生成症状集）", "INFO")
 
             # 检查文件
             nodes_file = self.nodes_file_var3.get()
@@ -1246,12 +1143,13 @@ class TRFI_PMC_GUI:
             n = int(self.n_var3.get())
             num_faults = int(self.faults_var3.get())
 
-            self.log_message(f"节点文件: {nodes_file}")
-            self.log_message(f"边文件: {edges_file}")
-            self.log_message(f"参数: n={n}, 故障节点数={num_faults}")
+            self.log_message(f"节点文件: {nodes_file}", "INFO")
+            self.log_message(f"边文件: {edges_file}", "INFO")
+            self.log_message(f"参数: n={n}, 故障节点数={num_faults}", "INFO")
 
             # 在新线程中运行
-            thread = threading.Thread(target=self._run_function3_thread, args=(nodes_file, edges_file, n, num_faults))
+            thread = threading.Thread(target=self._run_function3_thread,
+                                      args=(nodes_file, edges_file, n, num_faults))
             thread.daemon = True
             thread.start()
 
@@ -1272,7 +1170,7 @@ class TRFI_PMC_GUI:
             edges_df = pd.read_excel(edges_file)
             edges = list(zip(edges_df.iloc[:, 0].astype(str), edges_df.iloc[:, 1].astype(str)))
 
-            self.log_message(f"读取数据完成: {len(nodes)}个节点, {len(edges)}条边")
+            self.log_message(f"读取数据完成: {len(nodes)}个节点, {len(edges)}条边", "INFO")
 
             # 运行功能3
             result = self.system.function3(nodes, edges, n, num_faults)
@@ -1281,22 +1179,20 @@ class TRFI_PMC_GUI:
             # 更新UI
             self.root.after(0, self._update_function3_results, result)
 
-            # 启用网络可视化按钮
-            self.root.after(0, lambda: self.network_viz_btn.config(state=tk.NORMAL))
-
-            self.log_message("功能3运行完成")
+            self.log_message("功能3运行完成", "SUCCESS")
             self.status_var.set("就绪")
 
         except Exception as e:
             self.root.after(0, lambda: messagebox.showerror("错误", f"运行功能3时出错: {e}"))
+            self.log_message(f"功能3运行出错: {e}", "ERROR")
             self.status_var.set("就绪")
 
     def _update_function1_results(self, result: Dict[str, Any]):
         """更新功能1的结果显示"""
-        # 清空文本框
-        self.metrics_text.delete(1.0, tk.END)
+        # 清空文本区域
         self.info_text.delete(1.0, tk.END)
-        self.faults_text.delete(1.0, tk.END)
+        self.true_faults_text.delete(1.0, tk.END)
+        self.diagnosed_faults_text.delete(1.0, tk.END)
 
         # 显示网络信息
         network_info = result["网络信息"]
@@ -1305,30 +1201,38 @@ class TRFI_PMC_GUI:
             info_str += f"  {key}: {value}\n"
         self.info_text.insert(tk.END, info_str)
 
-        # 显示性能指标
-        if len(result["实验结果"]) > 1:
-            # 多次实验，显示平均指标
-            avg_metrics = result["平均指标"]
-            metrics_str = "平均性能指标:\n"
-            for key, value in avg_metrics.items():
-                metrics_str += f"  {key}: {value * 100:.2f}%\n"
+        # 更新指标表格
+        self.metrics_tree.delete(*self.metrics_tree.get_children())
 
-            # 显示每次实验的指标
-            metrics_str += "\n每次实验指标:\n"
-            for exp_result in result["实验结果"]:
-                metrics_str += f"  实验{exp_result['实验编号']}: "
-                metrics_str += f"准确率={exp_result['指标']['准确率'] * 100:.2f}%, "
-                metrics_str += f"真正率={exp_result['指标']['真正率'] * 100:.2f}%, "
-                metrics_str += f"精确率={exp_result['指标']['精确率'] * 100:.2f}%\n"
-        else:
-            # 单次实验
-            exp_result = result["实验结果"][0]
+        for exp_result in result["实验结果"]:
+            exp_num = exp_result["实验编号"]
             metrics = exp_result["指标"]
-            metrics_str = "性能指标:\n"
-            for key, value in metrics.items():
-                metrics_str += f"  {key}: {value * 100:.2f}%\n"
 
-        self.metrics_text.insert(tk.END, metrics_str)
+            values = (exp_num,
+                      f"{metrics['ACCR'] * 100:.2f}%",
+                      f"{metrics['TNR'] * 100:.2f}%",
+                      f"{metrics['FPR'] * 100:.2f}%",
+                      f"{metrics['TPR'] * 100:.2f}%",
+                      f"{metrics['Precision'] * 100:.2f}%")
+
+            self.metrics_tree.insert("", "end", values=values)
+
+        # 更新平均指标
+        if "平均指标" in result and result["平均指标"]:
+            avg_metrics = result["平均指标"]
+            for metric, value in avg_metrics.items():
+                if metric in self.avg_labels:
+                    self.avg_labels[metric].config(text=f"{value * 100:.2f}%")
+        elif result["实验结果"]:
+            # 计算平均指标
+            avg_metrics = {}
+            for metric in ["ACCR", "TNR", "FPR", "TPR", "Precision"]:
+                values = [r["指标"][metric] for r in result["实验结果"]]
+                avg_metrics[metric] = np.mean(values)
+
+            for metric, value in avg_metrics.items():
+                if metric in self.avg_labels:
+                    self.avg_labels[metric].config(text=f"{value * 100:.2f}%")
 
         # 显示故障节点
         if result["实验结果"]:
@@ -1336,133 +1240,218 @@ class TRFI_PMC_GUI:
             true_faults = last_exp["真实故障节点"]
             diagnosed_faults = last_exp["诊断故障节点"]
 
-            faults_str = "真实故障节点:\n"
+            # 真实故障节点
+            self.true_faults_text.insert(tk.END, f"总数: {len(true_faults)}\n")
+            self.true_faults_text.insert(tk.END, "-" * 30 + "\n")
             for i, node in enumerate(true_faults, 1):
-                faults_str += f"  {i}. {node}\n"
+                self.true_faults_text.insert(tk.END, f"{i}. {node}\n")
 
-            faults_str += "\n诊断故障节点:\n"
+            # 诊断故障节点
+            self.diagnosed_faults_text.insert(tk.END, f"总数: {len(diagnosed_faults)}\n")
+            self.diagnosed_faults_text.insert(tk.END, "-" * 30 + "\n")
             for i, node in enumerate(diagnosed_faults, 1):
                 status = "✓" if node in true_faults else "✗"
-                faults_str += f"  {i}. {node} {status}\n"
-
-            # 计算匹配度
-            correct = len(set(true_faults) & set(diagnosed_faults))
-            total_true = len(true_faults)
-            total_diagnosed = len(diagnosed_faults)
-
-            faults_str += f"\n诊断统计:\n"
-            faults_str += f"  真实故障节点数: {total_true}\n"
-            faults_str += f"  诊断故障节点数: {total_diagnosed}\n"
-            faults_str += f"  正确诊断数: {correct}\n"
-            faults_str += f"  诊断准确率: {correct / total_true * 100:.2f}%\n"
-
-            self.faults_text.insert(tk.END, faults_str)
+                self.diagnosed_faults_text.insert(tk.END, f"{i}. {node} {status}\n")
 
     def _update_function2_results(self, result: Dict[str, Any]):
         """更新功能2的结果显示"""
-        # 清空文本框
-        self.metrics_text.delete(1.0, tk.END)
+        # 清空文本区域
         self.info_text.delete(1.0, tk.END)
-        self.faults_text.delete(1.0, tk.END)
+        self.true_faults_text.delete(1.0, tk.END)
+        self.diagnosed_faults_text.delete(1.0, tk.END)
 
-        # 显示网络信息
-        network_info = result["网络信息"]
-        info_str = "网络信息:\n"
-        for key, value in network_info.items():
-            info_str += f"  {key}: {value}\n"
-        self.info_text.insert(tk.END, info_str)
+        # 功能2没有网络信息
+        self.info_text.insert(tk.END, "功能2: 真实网络诊断（输入症状集）\n\n")
+        self.info_text.insert(tk.END, "注：功能2需要真实故障节点才能计算性能指标\n")
+        self.info_text.insert(tk.END, f"诊断度 t = {result['诊断度t']}\n")
 
-        # 功能2没有性能指标
-        self.metrics_text.insert(tk.END, "功能2: 真实网络诊断（输入症状集）\n\n")
-        self.metrics_text.insert(tk.END, "注：功能2需要真实故障节点才能计算性能指标\n")
-        self.metrics_text.insert(tk.END, f"诊断度 t = {result['诊断度t']}\n")
+        # 清空指标表格
+        self.metrics_tree.delete(*self.metrics_tree.get_children())
+        for metric in self.avg_labels:
+            self.avg_labels[metric].config(text="N/A")
 
         # 显示诊断结果
         diagnosed_faults = result["诊断故障节点"]
-        faults_str = f"诊断故障节点 ({len(diagnosed_faults)}个):\n"
+        self.diagnosed_faults_text.insert(tk.END, f"诊断故障节点 ({len(diagnosed_faults)}个):\n")
+        self.diagnosed_faults_text.insert(tk.END, "-" * 30 + "\n")
         for i, node in enumerate(diagnosed_faults, 1):
-            faults_str += f"  {i}. {node}\n"
-
-        self.faults_text.insert(tk.END, faults_str)
+            self.diagnosed_faults_text.insert(tk.END, f"{i}. {node}\n")
 
     def _update_function3_results(self, result: Dict[str, Any]):
         """更新功能3的结果显示"""
-        # 清空文本框
-        self.metrics_text.delete(1.0, tk.END)
+        # 清空文本区域
         self.info_text.delete(1.0, tk.END)
-        self.faults_text.delete(1.0, tk.END)
+        self.true_faults_text.delete(1.0, tk.END)
+        self.diagnosed_faults_text.delete(1.0, tk.END)
 
-        # 显示网络信息
-        network_info = result["网络信息"]
-        info_str = "网络信息:\n"
-        for key, value in network_info.items():
-            info_str += f"  {key}: {value}\n"
-        self.info_text.insert(tk.END, info_str)
+        # 清空指标表格
+        self.metrics_tree.delete(*self.metrics_tree.get_children())
 
-        # 显示性能指标
+        # 添加单行指标
         metrics = result["指标"]
-        metrics_str = "性能指标:\n"
-        for key, value in metrics.items():
-            metrics_str += f"  {key}: {value * 100:.2f}%\n"
-        self.metrics_text.insert(tk.END, metrics_str)
+        values = (1,
+                  f"{metrics['ACCR'] * 100:.2f}%",
+                  f"{metrics['TNR'] * 100:.2f}%",
+                  f"{metrics['FPR'] * 100:.2f}%",
+                  f"{metrics['TPR'] * 100:.2f}%",
+                  f"{metrics['Precision'] * 100:.2f}%")
+
+        self.metrics_tree.insert("", "end", values=values)
+
+        # 更新平均指标
+        for metric, value in metrics.items():
+            if metric in self.avg_labels:
+                self.avg_labels[metric].config(text=f"{value * 100:.2f}%")
 
         # 显示故障节点
         true_faults = result["真实故障节点"]
         diagnosed_faults = result["诊断故障节点"]
 
-        faults_str = "真实故障节点:\n"
+        # 真实故障节点
+        self.true_faults_text.insert(tk.END, f"总数: {len(true_faults)}\n")
+        self.true_faults_text.insert(tk.END, "-" * 30 + "\n")
         for i, node in enumerate(true_faults, 1):
-            faults_str += f"  {i}. {node}\n"
+            self.true_faults_text.insert(tk.END, f"{i}. {node}\n")
 
-        faults_str += "\n诊断故障节点:\n"
+        # 诊断故障节点
+        self.diagnosed_faults_text.insert(tk.END, f"总数: {len(diagnosed_faults)}\n")
+        self.diagnosed_faults_text.insert(tk.END, "-" * 30 + "\n")
         for i, node in enumerate(diagnosed_faults, 1):
             status = "✓" if node in true_faults else "✗"
-            faults_str += f"  {i}. {node} {status}\n"
+            self.diagnosed_faults_text.insert(tk.END, f"{i}. {node} {status}\n")
 
-        # 计算匹配度
-        correct = len(set(true_faults) & set(diagnosed_faults))
-        total_true = len(true_faults)
-        total_diagnosed = len(diagnosed_faults)
+    def plot_performance(self):
+        """绘制性能变化图"""
+        if not self.system.metrics_history or len(self.system.metrics_history) <= 1:
+            messagebox.showinfo("提示", "需要多次实验数据才能绘制性能变化图")
+            return
 
-        faults_str += f"\n诊断统计:\n"
-        faults_str += f"  真实故障节点数: {total_true}\n"
-        faults_str += f"  诊断故障节点数: {total_diagnosed}\n"
-        faults_str += f"  正确诊断数: {correct}\n"
-        faults_str += f"  诊断准确率: {correct / total_true * 100:.2f}%\n"
+        # 在新线程中绘图
+        thread = threading.Thread(target=self._plot_performance_thread)
+        thread.daemon = True
+        thread.start()
 
-        self.faults_text.insert(tk.END, faults_str)
+    def _plot_performance_thread(self):
+        """绘图线程函数"""
+        try:
+            self.status_var.set("正在生成性能变化图...")
+            self.log_message("正在生成性能变化图", "INFO")
 
-    def plot_results(self):
-        """绘制实验分析图"""
-        if self.system.metrics_history and len(self.system.metrics_history) > 1:
-            self.system.plot_experiment_results()
-        else:
-            messagebox.showinfo("提示", "需要多次实验数据才能绘制分析图")
+            # 绘制性能变化图
+            self.system.plot_performance_metrics()
 
-    def visualize_network(self):
-        """可视化网络"""
-        if hasattr(self.system, 'network') and self.system.network:
-            if isinstance(self.system.network, BubbleSortNetwork):
-                # 冒泡排序网络可视化
-                if hasattr(self.system, 'true_faulty_nodes'):
-                    self.system.network.visualize_network(self.system.true_faulty_nodes)
+            self.log_message("性能变化图生成完成", "SUCCESS")
+            self.status_var.set("就绪")
+
+        except Exception as e:
+            self.root.after(0, lambda: messagebox.showerror("错误", f"绘制图表时出错: {e}"))
+            self.log_message(f"绘制图表出错: {e}", "ERROR")
+            self.status_var.set("就绪")
+
+    def plot_comparison(self):
+        """绘制指标对比图"""
+        if not self.system.metrics_history:
+            messagebox.showinfo("提示", "需要实验数据才能绘制指标对比图")
+            return
+
+        # 在新线程中绘图
+        thread = threading.Thread(target=self._plot_comparison_thread)
+        thread.daemon = True
+        thread.start()
+
+    def _plot_comparison_thread(self):
+        """绘图线程函数"""
+        try:
+            self.status_var.set("正在生成指标对比图...")
+            self.log_message("正在生成指标对比图", "INFO")
+
+            # 绘制指标对比图
+            self.system.plot_metrics_comparison()
+
+            self.log_message("指标对比图生成完成", "SUCCESS")
+            self.status_var.set("就绪")
+
+        except Exception as e:
+            self.root.after(0, lambda: messagebox.showerror("错误", f"绘制图表时出错: {e}"))
+            self.log_message(f"绘制图表出错: {e}", "ERROR")
+            self.status_var.set("就绪")
+
+    def save_current_plot(self):
+        """保存当前图表"""
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".png",
+            filetypes=[("PNG files", "*.png"), ("PDF files", "*.pdf"),
+                       ("SVG files", "*.svg"), ("All files", "*.*")]
+        )
+        if file_path:
+            try:
+                # 重新绘制并保存
+                if len(self.system.metrics_history) > 1:
+                    self.system.plot_performance_metrics(save_path=file_path)
                 else:
-                    self.system.network.visualize_network()
-            else:
-                messagebox.showinfo("提示", "通用网络的可视化功能正在开发中")
-        else:
-            messagebox.showinfo("提示", "请先运行诊断功能")
+                    self.system.plot_metrics_comparison(save_path=file_path)
+
+                self.log_message(f"图表已保存到: {file_path}", "SUCCESS")
+            except Exception as e:
+                self.log_message(f"保存图表时出错: {e}", "ERROR")
+                messagebox.showerror("错误", f"保存图表时出错: {e}")
+
+    def export_data(self):
+        """导出实验数据"""
+        if not self.system.metrics_history:
+            messagebox.showinfo("提示", "没有实验数据可导出")
+            return
+
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".xlsx",
+            filetypes=[("Excel files", "*.xlsx"), ("CSV files", "*.csv"), ("All files", "*.*")]
+        )
+        if file_path:
+            try:
+                # 准备数据
+                data = []
+                for i, metrics in enumerate(self.system.metrics_history, 1):
+                    row = {"实验编号": i}
+                    for metric_name, metric_value in metrics.items():
+                        row[metric_name] = metric_value
+                    data.append(row)
+
+                # 保存为Excel
+                df = pd.DataFrame(data)
+                df.to_excel(file_path, index=False)
+
+                self.log_message(f"实验数据已导出到: {file_path}", "SUCCESS")
+                messagebox.showinfo("导出成功", f"实验数据已成功导出到:\n{file_path}")
+
+            except Exception as e:
+                self.log_message(f"导出数据时出错: {e}", "ERROR")
+                messagebox.showerror("错误", f"导出数据时出错: {e}")
+
+    def on_closing(self):
+        """关闭窗口时的处理"""
+        if messagebox.askokcancel("退出", "确定要退出系统吗？"):
+            self.root.destroy()
 
     def run(self):
         """运行GUI"""
+        # 设置窗口居中
+        self.root.update_idletasks()
+        width = self.root.winfo_width()
+        height = self.root.winfo_height()
+        x = (self.root.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.root.winfo_screenheight() // 2) - (height // 2)
+        self.root.geometry(f'{width}x{height}+{x}+{y}')
+
         self.root.mainloop()
 
 
 def main():
     """主函数"""
-    print("=" * 60)
+    print("=" * 70)
     print("冒泡排序网络故障诊断系统 (TRFI-PMC)")
-    print("=" * 60)
+    print("版本: 1.0.0")
+    print("功能: 5个核心指标 (ACCR, TNR, FPR, TPR, Precision)")
+    print("=" * 70)
 
     # 设置随机种子
     random.seed(42)
