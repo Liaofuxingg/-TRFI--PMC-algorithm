@@ -1,3 +1,8 @@
-# TRFI-PMC algorithm
-The code for Two Fault Diagnosis Strategies for Reliable Bubble-Sort Networks
-下载requirements的安装包，安装好python环境即可
+Python 3.7-3.10
+主要库及版本：
+pandas: 1.3.0
+numpy: 1.21.0
+matplotlib: 3.4.0
+seaborn: 0.11.0
+tkinter
+openpyxl: 3.0.0
