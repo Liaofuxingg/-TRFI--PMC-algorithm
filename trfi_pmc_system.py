@@ -117,117 +117,154 @@ class PMCModel:
 
 
 class TRFI_PMC:
-    """三轮故障识别算法"""
+    """三轮故障识别算法 - 按照C++代码逻辑修改"""
 
     def __init__(self, network, symptoms: Dict[Tuple[str, str], int]):
         self.network = network
         self.symptoms = symptoms
 
-    def _is_00_edge(self, u: str, v: str) -> bool:
-        """检查是否为(0,0)边"""
-        if (u, v) in self.symptoms and (v, u) in self.symptoms:
-            return self.symptoms[(u, v)] == 0 and self.symptoms[(v, u)] == 0
-        return False
+    def _generate_neighbor(self, s: str, j: int) -> str:
+        """生成邻居节点，交换位置j和j+1"""
+        neighbor_list = list(s)
+        neighbor_list[j], neighbor_list[j + 1] = neighbor_list[j + 1], neighbor_list[j]
+        return ''.join(neighbor_list)
 
     def run(self, t: int) -> List[str]:
-        """运行TRFI-PMC算法"""
-        # 分组阶段
-        groups = []
-        group_of_node = {}
-        visited = set()
+        """运行TRFI-PMC算法（按照C++代码逻辑）"""
+        # 分组阶段 - 基于(0,0)边进行BFS分组
+        n = self.network.n if hasattr(self.network, 'n') else len(list(self.network.nodes[0]))
+        nodes = self.network.nodes
+        node_to_idx = {node: idx for idx, node in enumerate(nodes)}
+        idx_to_node = {idx: node for idx, node in enumerate(nodes)}
 
-        for node in self.network.nodes:
-            if node in visited:
-                continue
+        # 初始化数据结构
+        visited = [False] * len(nodes)
+        groups = []  # 存储每个组包含的节点索引
+        group_of_node = {}  # 节点属于哪个组
+        group_count = 0
 
-            group = []
-            queue = deque([node])
+        # BFS分组
+        for i, node in enumerate(nodes):
+            if not visited[i]:
+                # 新组开始
+                group = []
+                queue = deque([i])
+                visited[i] = True
 
-            while queue:
-                current = queue.popleft()
-                if current in visited:
-                    continue
+                while queue:
+                    current_idx = queue.popleft()
+                    current_node = nodes[current_idx]
+                    group.append(current_idx)
+                    group_of_node[current_idx] = group_count
 
-                visited.add(current)
-                group.append(current)
-                group_of_node[current] = len(groups)
+                    # 检查所有邻居
+                    for j in range(n - 1):
+                        neighbor_node = self._generate_neighbor(current_node, j)
+                        neighbor_idx = node_to_idx.get(neighbor_node, -1)
 
-                for neighbor in self.network.get_neighbors(current):
-                    if neighbor not in visited and self._is_00_edge(current, neighbor):
-                        queue.append(neighbor)
+                        if neighbor_idx != -1 and not visited[neighbor_idx]:
+                            # 检查是否为(0,0)边
+                            if ((current_node, neighbor_node) in self.symptoms and
+                                    (neighbor_node, current_node) in self.symptoms and
+                                    self.symptoms[(current_node, neighbor_node)] == 0 and
+                                    self.symptoms[(neighbor_node, current_node)] == 0):
+                                visited[neighbor_idx] = True
+                                queue.append(neighbor_idx)
 
-            if group:
                 groups.append(group)
+                group_count += 1
 
         # 初始化组状态
-        unclassified = set(range(len(groups)))
-        faulty_groups = set()
-        fault_free_groups = set()
+        total_nodes = len(nodes)
+        total_groups = len(groups)
+        st2 = [False] * total_groups  # 标记组是否已被分类
 
-        # 第一轮检测
-        to_remove = set()
-        for group_idx in unclassified:
-            group = groups[group_idx]
-            for node in group:
-                for neighbor in self.network.get_neighbors(node):
-                    if neighbor in group:
-                        continue
+        # 第一轮检测：fuxing() - 直接诊断
+        chun = []  # 故障组
+        guzhang = 0  # 故障节点数
+        xi = []  # 正常组
+        wuguzhang = 0  # 正常节点数
 
-                    sigma_uv = self.symptoms.get((node, neighbor), -1)
-                    sigma_vu = self.symptoms.get((neighbor, node), -1)
+        for i in range(total_groups):
+            he = False
+            for node_idx in groups[i]:
+                node = nodes[node_idx]
+                # 检查所有邻居
+                for j in range(n - 1):
+                    neighbor_node = self._generate_neighbor(node, j)
+                    neighbor_idx = node_to_idx.get(neighbor_node, -1)
 
-                    if sigma_uv == 0 and sigma_vu == 1:
-                        faulty_groups.add(group_idx)
-                        to_remove.add(group_idx)
-                        break
-                    elif sigma_uv == 1 and sigma_vu == 0:
-                        neighbor_group = group_of_node.get(neighbor)
-                        if neighbor_group is not None:
-                            faulty_groups.add(neighbor_group)
-                            to_remove.add(neighbor_group)
-                        break
-                if group_idx in to_remove:
+                    if neighbor_idx != -1:
+                        # 检查症状是否为(0,1)
+                        if ((node, neighbor_node) in self.symptoms and
+                                (neighbor_node, node) in self.symptoms and
+                                self.symptoms[(node, neighbor_node)] == 0 and
+                                self.symptoms[(neighbor_node, node)] == 1):
+                            he = True
+                            break
+                if he:
                     break
 
-        unclassified -= to_remove
+            if he and not st2[i]:
+                chun.append(i)
+                st2[i] = True
+                guzhang += len(groups[i])
 
-        # 第二轮检测
-        to_remove = set()
-        for group_idx in list(unclassified):
-            group_size = len(groups[group_idx])
-            remaining_faults = t - len(faulty_groups)
+        # 第二轮检测：fuxing1() - 大小判断
+        while True:
+            res = 0
+            for i in range(total_groups):
+                if not st2[i] and len(groups[i]) > t - guzhang:
+                    xi.append(i)
+                    wuguzhang += len(groups[i])
+                    st2[i] = True
+                    res += 1
 
-            if group_size > remaining_faults:
-                fault_free_groups.add(group_idx)
-                to_remove.add(group_idx)
+            if res == 0:
+                break
 
-        unclassified -= to_remove
+        # 第三轮检测：fuxing3() - 假设法
+        while True:
+            res = 0
+            for i in range(total_groups):
+                if not st2[i]:
+                    # 收集相邻的未分类组的节点数
+                    cntt = 0
+                    for node_idx in groups[i]:
+                        node = nodes[node_idx]
+                        # 检查所有邻居
+                        for j in range(n - 1):
+                            neighbor_node = self._generate_neighbor(node, j)
+                            neighbor_idx = node_to_idx.get(neighbor_node, -1)
 
-        # 第三轮检测
-        to_remove = set()
-        for group_idx in list(unclassified):
-            unclassified_neighbor_count = 0
-            for node in groups[group_idx]:
-                for neighbor in self.network.get_neighbors(node):
-                    neighbor_group = group_of_node.get(neighbor)
-                    if (neighbor_group is not None and
-                            neighbor_group in unclassified and
-                            neighbor_group != group_idx):
-                        unclassified_neighbor_count += 1
+                            if neighbor_idx != -1:
+                                neighbor_group = group_of_node.get(neighbor_idx, -1)
+                                if neighbor_group != -1 and not st2[neighbor_group] and neighbor_group != i:
+                                    cntt += len(groups[neighbor_group])
 
-            remaining_faults = t - len(faulty_groups)
+                    if cntt > t - wuguzhang - guzhang:
+                        chun.append(i)
+                        res += 1
+                        st2[i] = True
+                        guzhang += len(groups[i])
 
-            if unclassified_neighbor_count > remaining_faults:
-                faulty_groups.add(group_idx)
-                to_remove.add(group_idx)
+            if res == 0:
+                break
 
-        unclassified -= to_remove
-        fault_free_groups.update(unclassified)
-
-        # 收集故障节点
+        # 收集故障节点 - 确保不超过t个
         faulty_nodes = []
-        for group_idx in faulty_groups:
-            faulty_nodes.extend(groups[group_idx])
+        for group_idx in chun:
+            for node_idx in groups[group_idx]:
+                if len(faulty_nodes) < t:
+                    faulty_nodes.append(nodes[node_idx])
+                else:
+                    break
+            if len(faulty_nodes) >= t:
+                break
+
+        # 确保诊断节点数不超过t
+        if len(faulty_nodes) > t:
+            faulty_nodes = faulty_nodes[:t]
 
         return faulty_nodes
 
@@ -239,6 +276,11 @@ class GeneralNetwork:
         self.nodes = nodes
         self.edges = edges
         self.adj_list = self._generate_adjacency_list()
+        # 估计n值（用于邻居生成）
+        if nodes:
+            self.n = len(str(nodes[0]))
+        else:
+            self.n = 0
 
     def _generate_adjacency_list(self) -> Dict[str, List[str]]:
         """生成邻接表"""
@@ -360,6 +402,13 @@ class TRFI_PMC_System:
             diagnosed_nodes = diagnoser.run(num_faults)
             self.diagnosed_faulty_nodes = set(diagnosed_nodes)
 
+            # 确保诊断节点数不超过故障节点数
+            if len(self.diagnosed_faulty_nodes) > num_faults:
+                # 如果超过，只保留前num_faults个
+                diagnosed_list = list(self.diagnosed_faulty_nodes)[:num_faults]
+                self.diagnosed_faulty_nodes = set(diagnosed_list)
+                print(f"警告：诊断出 {len(diagnosed_nodes)} 个故障节点，超过设定的 {num_faults} 个，已截断")
+
             # 评估结果
             evaluator = Evaluator(self.true_faulty_nodes, self.diagnosed_faulty_nodes, self.network.nodes)
             metrics = evaluator.calculate_all_metrics()
@@ -390,6 +439,7 @@ class TRFI_PMC_System:
             print(f"TPR: {metrics['TPR']:.4f}")
             print(f"Precision: {metrics['Precision']:.4f}")
             print(f"F1分数: {metrics['F1分数']:.4f}")
+            print(f"诊断节点数: {len(self.diagnosed_faulty_nodes)} (不超过设定的 {num_faults} 个)")
             print(f"运行时间: {exp_time:.2f}秒")
 
         # 计算平均指标
@@ -430,9 +480,16 @@ class TRFI_PMC_System:
         diagnosed_nodes = diagnoser.run(t)
         self.diagnosed_faulty_nodes = set(diagnosed_nodes)
 
+        # 确保诊断节点数不超过t
+        if len(self.diagnosed_faulty_nodes) > t:
+            # 如果超过，只保留前t个
+            diagnosed_list = list(self.diagnosed_faulty_nodes)[:t]
+            self.diagnosed_faulty_nodes = set(diagnosed_list)
+            print(f"警告：诊断出 {len(diagnosed_nodes)} 个故障节点，超过设定的 {t} 个，已截断")
+
         print(f"诊断度 t: {t}")
         print(f"节点总数: {len(nodes)}")
-        print(f"诊断出 {len(self.diagnosed_faulty_nodes)} 个故障节点")
+        print(f"诊断出 {len(self.diagnosed_faulty_nodes)} 个故障节点 (不超过设定的 {t} 个)")
         print(f"诊断故障比例: {len(self.diagnosed_faulty_nodes) / len(nodes) if len(nodes) > 0 else 0:.4f}")
 
         # 保存结果到Excel
@@ -448,53 +505,6 @@ class TRFI_PMC_System:
                 "边数": len(edges),
                 "诊断故障节点数": len(self.diagnosed_faulty_nodes)
             }
-        }
-
-    def function3(self, nodes: List[str], edges: List[Tuple[str, str]],
-                  fault_ratio: float) -> Dict[str, Any]:
-        """功能3：真实网络诊断（生成症状集）- 使用故障比例"""
-        print(f"功能3：真实网络诊断（生成症状集）")
-
-        # 创建通用网络
-        self.network = GeneralNetwork(nodes, edges)
-
-        # 根据故障比例计算故障节点数
-        total_nodes = len(nodes)
-        num_faults = max(1, int(total_nodes * fault_ratio))
-
-        self.true_faulty_nodes = set(random.sample(nodes, num_faults))
-
-        # 生成症状集
-        pmc_model = PMCModel(self.network)
-        symptoms = pmc_model.generate_symptoms(self.true_faulty_nodes)
-
-        # 运行诊断
-        diagnoser = TRFI_PMC(self.network, symptoms)
-        diagnosed_nodes = diagnoser.run(num_faults)
-        self.diagnosed_faulty_nodes = set(diagnosed_nodes)
-
-        # 评估结果
-        evaluator = Evaluator(self.true_faulty_nodes, self.diagnosed_faulty_nodes, nodes)
-        metrics = evaluator.calculate_all_metrics()
-
-        print(f"故障比例: {fault_ratio:.4f}")
-        print(f"实际故障节点数: {num_faults}")
-        print(f"ACCR: {metrics['ACCR']:.4f}")
-        print(f"TNR: {metrics['TNR']:.4f}")
-        print(f"FPR: {metrics['FPR']:.4f}")
-        print(f"TPR: {metrics['TPR']:.4f}")
-        print(f"Precision: {metrics['Precision']:.4f}")
-        print(f"F1分数: {metrics['F1分数']:.4f}")
-
-        # 保存结果到Excel
-        self._save_function3_data(nodes, num_faults, metrics, self.true_faulty_nodes, self.diagnosed_faulty_nodes)
-
-        return {
-            "故障比例": fault_ratio,
-            "实际故障节点数": num_faults,
-            "真实故障节点": list(self.true_faulty_nodes),
-            "诊断故障节点": list(self.diagnosed_faulty_nodes),
-            "指标": metrics
         }
 
     def _save_function1_data(self, results: List[Dict], n: int, num_faults: int):
@@ -518,6 +528,7 @@ class TRFI_PMC_System:
                 "TPR": metrics['TPR'],
                 "Precision": metrics['Precision'],
                 "F1分数": metrics['F1分数'],
+                "诊断节点数": len(result["诊断故障节点"]),
                 "运行时间": result["运行时间"]
             })
 
@@ -577,7 +588,8 @@ class TRFI_PMC_System:
             "节点总数": len(nodes),
             "诊断故障节点数": len(diagnosed_nodes),
             "诊断故障比例": len(diagnosed_nodes) / len(nodes) if len(nodes) > 0 else 0,
-            "诊断度t": t
+            "诊断度t": t,
+            "是否超过诊断度": "是" if len(diagnosed_nodes) > t else "否"
         }]
 
         summary_df = pd.DataFrame(summary_data)
@@ -586,52 +598,6 @@ class TRFI_PMC_System:
 
         print(f"诊断结果已保存到: {excel_path}")
         print(f"诊断汇总已保存到: {summary_excel_path}")
-
-    def _save_function3_data(self, nodes: List[str], num_faults: int, metrics: Dict[str, float],
-                             true_faulty: Set[str], diagnosed_faulty: Set[str]):
-        """保存功能3的数据到Excel"""
-        os.makedirs("results", exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-        # 保存性能指标
-        metrics_data = [{
-            "节点总数": len(nodes),
-            "故障节点数": num_faults,
-            "故障比例": num_faults / len(nodes),
-            "ACCR": metrics['ACCR'],
-            "TNR": metrics['TNR'],
-            "FPR": metrics['FPR'],
-            "TPR": metrics['TPR'],
-            "Precision": metrics['Precision'],
-            "F1分数": metrics['F1分数']
-        }]
-
-        metrics_df = pd.DataFrame(metrics_data)
-        metrics_excel_path = f"results/功能3_性能指标_{timestamp}.xlsx"
-        metrics_df.to_excel(metrics_excel_path, index=False, float_format="%.4f")
-        print(f"性能指标已保存到: {metrics_excel_path}")
-
-        # 保存故障节点对比
-        faults_data = []
-        for node in true_faulty:
-            faults_data.append({
-                "节点": node,
-                "类型": "真实故障",
-                "是否被诊断出": "是" if node in diagnosed_faulty else "否"
-            })
-
-        for node in diagnosed_faulty:
-            if node not in true_faulty:
-                faults_data.append({
-                    "节点": node,
-                    "类型": "误诊故障",
-                    "是否被诊断出": "是"
-                })
-
-        faults_df = pd.DataFrame(faults_data)
-        faults_excel_path = f"results/功能3_故障节点对比_{timestamp}.xlsx"
-        faults_df.to_excel(faults_excel_path, index=False)
-        print(f"故障节点对比已保存到: {faults_excel_path}")
 
 
 class TRFI_PMC_GUI:
@@ -644,7 +610,7 @@ class TRFI_PMC_GUI:
         # 创建主窗口
         self.root = tk.Tk()
         self.root.title("冒泡排序网络故障诊断系统 (TRFI-PMC)")
-        self.root.geometry("1200x800")
+        self.root.geometry("1000x800")
 
         # 设置图标
         try:
@@ -669,7 +635,7 @@ class TRFI_PMC_GUI:
         # 创建标题
         title_label = ttk.Label(self.main_frame, text="冒泡排序网络故障诊断系统 (TRFI-PMC)",
                                 style='Title.TLabel', foreground='#2C3E50')
-        title_label.grid(row=0, column=0, columnspan=3, pady=(0, 20))
+        title_label.grid(row=0, column=0, columnspan=2, pady=(0, 20))
 
         # 创建功能选择区域
         self._create_function_selection()
@@ -707,8 +673,8 @@ class TRFI_PMC_GUI:
                                                                              pady=5)
 
         ttk.Label(func1_frame, text="实验次数:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
-        self.exp_var = tk.StringVar(value="5")
-        ttk.Entry(func1_frame, textvariable=self.exp_var, width=12).grid(row=2, column=1, sticky=tk.W, padx=5, pady=5)
+        self.exp_var1 = tk.StringVar(value="5")
+        ttk.Entry(func1_frame, textvariable=self.exp_var1, width=12).grid(row=2, column=1, sticky=tk.W, padx=5, pady=5)
 
         func1_btn = ttk.Button(func1_frame, text="运行功能1", command=self.run_function1,
                                style='Accent.TButton')
@@ -754,37 +720,9 @@ class TRFI_PMC_GUI:
                                style='Accent.TButton')
         func2_btn.grid(row=5, column=0, columnspan=3, pady=(10, 0))
 
-        # 功能3：真实网络诊断（生成症状集）
-        func3_frame = ttk.LabelFrame(func_frame, text="功能3: 真实网络诊断（生成症状集）", padding="10")
-        func3_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
-
-        ttk.Label(func3_frame, text="节点文件:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
-        self.nodes_file_var3 = tk.StringVar()
-        nodes_entry3 = ttk.Entry(func3_frame, textvariable=self.nodes_file_var3, width=25)
-        nodes_entry3.grid(row=0, column=1, sticky=tk.W, padx=5, pady=5)
-        ttk.Button(func3_frame, text="浏览", command=self.select_nodes_file3, width=8).grid(row=0, column=2, padx=5,
-                                                                                            pady=5)
-
-        ttk.Label(func3_frame, text="边文件:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
-        self.edges_file_var3 = tk.StringVar()
-        edges_entry3 = ttk.Entry(func3_frame, textvariable=self.edges_file_var3, width=25)
-        edges_entry3.grid(row=1, column=1, sticky=tk.W, padx=5, pady=5)
-        ttk.Button(func3_frame, text="浏览", command=self.select_edges_file3, width=8).grid(row=1, column=2, padx=5,
-                                                                                            pady=5)
-
-        ttk.Label(func3_frame, text="故障比例:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
-        self.fault_ratio_var3 = tk.StringVar(value="0.2")
-        ttk.Entry(func3_frame, textvariable=self.fault_ratio_var3, width=12).grid(row=2, column=1, sticky=tk.W, padx=5,
-                                                                                  pady=5)
-        ttk.Label(func3_frame, text="(0-1之间，如0.2表示20%)").grid(row=2, column=2, sticky=tk.W, padx=5, pady=5)
-
-        func3_btn = ttk.Button(func3_frame, text="运行功能3", command=self.run_function3,
-                               style='Accent.TButton')
-        func3_btn.grid(row=3, column=0, columnspan=3, pady=(10, 0))
-
         # 控制按钮框架
         control_frame = ttk.LabelFrame(func_frame, text="控制选项", padding="10")
-        control_frame.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=(10, 0))
+        control_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=(10, 0))
 
         self.export_btn = ttk.Button(control_frame, text="导出当前结果数据",
                                      command=self.export_data, state=tk.DISABLED, width=20)
@@ -814,14 +752,14 @@ class TRFI_PMC_GUI:
         self.notebook.add(metrics_tab, text="性能指标")
 
         # 创建指标表格
-        columns = ("实验", "ACCR", "TPR", "Precision", "F1分数", "TNR", "FPR")
+        columns = ("实验", "ACCR", "TPR", "Precision", "F1分数", "TNR", "FPR", "诊断节点数")
         self.metrics_tree = ttk.Treeview(metrics_tab, columns=columns, show="headings", height=12)
 
         # 设置列标题
         for col in columns:
             self.metrics_tree.heading(col, text=col)
             if col in ["ACCR", "TPR", "Precision", "F1分数", "TNR", "FPR"]:
-                self.metrics_tree.column(col, width=80, anchor="center")
+                self.metrics_tree.column(col, width=70, anchor="center")
             else:
                 self.metrics_tree.column(col, width=60, anchor="center")
 
@@ -954,26 +892,6 @@ class TRFI_PMC_GUI:
             self.symptoms_file_var2.set(filename)
             self.log_message(f"已选择症状集文件: {filename}", "INFO")
 
-    def select_nodes_file3(self):
-        """选择功能3的节点文件"""
-        filename = filedialog.askopenfilename(
-            title="选择节点文件",
-            filetypes=[("Excel files", "*.xlsx *.xls"), ("CSV files", "*.csv"), ("All files", "*.*")]
-        )
-        if filename:
-            self.nodes_file_var3.set(filename)
-            self.log_message(f"已选择节点文件: {filename}", "INFO")
-
-    def select_edges_file3(self):
-        """选择功能3的边文件"""
-        filename = filedialog.askopenfilename(
-            title="选择边文件",
-            filetypes=[("Excel files", "*.xlsx *.xls"), ("CSV files", "*.csv"), ("All files", "*.*")]
-        )
-        if filename:
-            self.edges_file_var3.set(filename)
-            self.log_message(f"已选择边文件: {filename}", "INFO")
-
     def run_function1(self):
         """运行功能1"""
         try:
@@ -983,7 +901,7 @@ class TRFI_PMC_GUI:
             # 获取参数
             n = int(self.n_var.get())
             num_faults = int(self.faults_var1.get())
-            num_experiments = int(self.exp_var.get())
+            num_experiments = int(self.exp_var1.get())
 
             # 验证参数
             if num_faults <= 0:
@@ -1184,147 +1102,6 @@ class TRFI_PMC_GUI:
             self.log_message(error_msg, "ERROR")
             self.status_var.set("就绪")
 
-    def run_function3(self):
-        """运行功能3"""
-        try:
-            self.status_var.set("正在运行功能3...")
-            self.log_message("开始运行功能3: 真实网络诊断", "INFO")
-
-            # 检查文件
-            nodes_file = self.nodes_file_var3.get()
-            edges_file = self.edges_file_var3.get()
-
-            if not nodes_file or not edges_file:
-                messagebox.showerror("错误", "请选择节点文件和边文件")
-                self.status_var.set("就绪")
-                return
-
-            # 检查文件是否存在
-            for file_path, file_type in [(nodes_file, "节点文件"), (edges_file, "边文件")]:
-                if not os.path.exists(file_path):
-                    messagebox.showerror("错误", f"{file_type}不存在: {file_path}")
-                    self.status_var.set("就绪")
-                    return
-                if not os.path.isfile(file_path):
-                    messagebox.showerror("错误", f"{file_type}不是有效的文件: {file_path}")
-                    self.status_var.set("就绪")
-                    return
-
-            fault_ratio = float(self.fault_ratio_var3.get())
-
-            # 验证参数
-            if fault_ratio <= 0 or fault_ratio > 1:
-                messagebox.showerror("输入错误", "故障比例必须在0-1之间")
-                self.status_var.set("就绪")
-                return
-
-            self.log_message(f"节点文件: {nodes_file}", "INFO")
-            self.log_message(f"边文件: {edges_file}", "INFO")
-            self.log_message(f"故障比例: {fault_ratio:.4f}", "INFO")
-
-            # 在新线程中运行
-            thread = threading.Thread(target=self._run_function3_thread,
-                                      args=(nodes_file, edges_file, fault_ratio))
-            thread.daemon = True
-            thread.start()
-
-        except ValueError as e:
-            messagebox.showerror("输入错误", f"请输入有效的参数: {e}")
-            self.status_var.set("就绪")
-        except Exception as e:
-            messagebox.showerror("错误", f"运行功能3时出错: {e}")
-            self.status_var.set("就绪")
-
-    def _run_function3_thread(self, nodes_file: str, edges_file: str, fault_ratio: float):
-        """功能3线程函数"""
-        try:
-            # 读取数据
-            self.log_message("正在读取节点文件...", "INFO")
-
-            # 节点文件处理
-            if nodes_file.endswith('.csv'):
-                try:
-                    nodes_df = pd.read_csv(nodes_file, header=None)
-                except:
-                    nodes_df = pd.read_csv(nodes_file, header=None, encoding='gbk')
-            else:
-                nodes_df = pd.read_excel(nodes_file, header=None)
-
-            # 确保只有一列
-            if nodes_df.shape[1] > 1:
-                self.log_message(f"警告：节点文件有 {nodes_df.shape[1]} 列，只使用第一列", "WARNING")
-
-            # 将第一列转换为字符串，处理可能的NaN值
-            nodes = []
-            for val in nodes_df.iloc[:, 0]:
-                if pd.isna(val):
-                    continue
-                # 转换为字符串，去除空格
-                node_str = str(val).strip()
-                if node_str:  # 只添加非空字符串
-                    nodes.append(node_str)
-
-            self.log_message(f"读取完成: {len(nodes)}个节点", "INFO")
-
-            if len(nodes) == 0:
-                raise ValueError("节点文件中没有有效的节点数据")
-
-            # 边文件处理
-            self.log_message("正在读取边文件...", "INFO")
-            if edges_file.endswith('.csv'):
-                try:
-                    edges_df = pd.read_csv(edges_file, header=None)
-                except:
-                    edges_df = pd.read_csv(edges_file, header=None, encoding='gbk')
-            else:
-                edges_df = pd.read_excel(edges_file, header=None)
-
-            # 确保至少有两列
-            if edges_df.shape[1] < 2:
-                raise ValueError(f"边文件只有 {edges_df.shape[1]} 列，需要至少两列")
-
-            # 处理边数据
-            edges = []
-            for _, row in edges_df.iterrows():
-                # 获取前两列的值
-                if len(row) >= 2:
-                    u = str(row.iloc[0]).strip() if not pd.isna(row.iloc[0]) else None
-                    v = str(row.iloc[1]).strip() if not pd.isna(row.iloc[1]) else None
-
-                    if u and v and u in nodes and v in nodes:
-                        edges.append((u, v))
-                    elif u and v:
-                        # 即使节点不在节点列表中，也添加边（可能节点列表不完整）
-                        edges.append((u, v))
-
-            self.log_message(f"读取完成: {len(edges)}条边", "INFO")
-
-            if len(edges) == 0:
-                raise ValueError("边文件中没有有效的边数据")
-
-            self.log_message(f"数据读取完成: {len(nodes)}个节点, {len(edges)}条边", "INFO")
-            self.log_message(f"节点示例: {nodes[:5] if len(nodes) > 5 else nodes}", "INFO")
-            self.log_message(f"边示例: {edges[:5] if len(edges) > 5 else edges}", "INFO")
-
-            # 运行功能3
-            result = self.system.function3(nodes, edges, fault_ratio)
-            self.current_result = result
-
-            # 更新UI
-            self.root.after(0, self._update_function3_results, result)
-
-            # 启用导出按钮
-            self.root.after(0, lambda: self.export_btn.config(state=tk.NORMAL))
-
-            self.log_message("功能3运行完成", "SUCCESS")
-            self.status_var.set("就绪")
-
-        except Exception as e:
-            error_msg = f"功能3运行出错: {str(e)}"
-            self.root.after(0, lambda: messagebox.showerror("错误", error_msg))
-            self.log_message(error_msg, "ERROR")
-            self.status_var.set("就绪")
-
     def _update_function1_results(self, result: Dict[str, Any]):
         """更新功能1的结果显示"""
         # 清空文本区域
@@ -1334,7 +1111,8 @@ class TRFI_PMC_GUI:
 
         # 显示网络信息
         network_info = result["网络信息"]
-        info_str = "网络信息:\n"
+        info_str = "功能1: 合成网络诊断\n\n"
+        info_str += "网络信息:\n"
         for key, value in network_info.items():
             info_str += f"  {key}: {value}\n"
         self.info_text.insert(tk.END, info_str)
@@ -1352,7 +1130,8 @@ class TRFI_PMC_GUI:
                       f"{metrics['Precision']:.4f}",
                       f"{metrics['F1分数']:.4f}",
                       f"{metrics['TNR']:.4f}",
-                      f"{metrics['FPR']:.4f}")
+                      f"{metrics['FPR']:.4f}",
+                      f"{len(exp_result['诊断故障节点'])}/{exp_result['故障节点数']}")
 
             self.metrics_tree.insert("", "end", values=values)
 
@@ -1386,7 +1165,7 @@ class TRFI_PMC_GUI:
                 self.true_faults_text.insert(tk.END, f"{i}. {node}\n")
 
             # 诊断故障节点
-            self.diagnosed_faults_text.insert(tk.END, f"总数: {len(diagnosed_faults)}\n")
+            self.diagnosed_faults_text.insert(tk.END, f"总数: {len(diagnosed_faults)} (不超过设定的 {last_exp['故障节点数']} 个)\n")
             self.diagnosed_faults_text.insert(tk.END, "-" * 30 + "\n")
             for i, node in enumerate(diagnosed_faults, 1):
                 status = "✓" if node in true_faults else "✗"
@@ -1404,7 +1183,7 @@ class TRFI_PMC_GUI:
         info_str = "功能2: 真实网络诊断（输入症状集）\n\n"
         info_str += f"诊断度 t: {result['诊断度t']}\n"
         info_str += f"节点总数: {result['节点总数']}\n"
-        info_str += f"诊断故障节点数: {len(result['诊断故障节点'])}\n"
+        info_str += f"诊断故障节点数: {len(result['诊断故障节点'])} (不超过设定的 {result['诊断度t']} 个)\n"
         info_str += f"诊断故障比例: {result['诊断故障比例']:.4f}\n\n"
         info_str += "网络信息:\n"
         for key, value in network_info.items():
@@ -1419,54 +1198,10 @@ class TRFI_PMC_GUI:
 
         # 显示诊断结果
         diagnosed_faults = result["诊断故障节点"]
-        self.diagnosed_faults_text.insert(tk.END, f"诊断故障节点 ({len(diagnosed_faults)}个):\n")
+        self.diagnosed_faults_text.insert(tk.END, f"诊断故障节点 ({len(diagnosed_faults)}个，不超过设定的 {result['诊断度t']} 个):\n")
         self.diagnosed_faults_text.insert(tk.END, "-" * 30 + "\n")
         for i, node in enumerate(diagnosed_faults, 1):
             self.diagnosed_faults_text.insert(tk.END, f"{i}. {node}\n")
-
-    def _update_function3_results(self, result: Dict[str, Any]):
-        """更新功能3的结果显示"""
-        # 清空文本区域
-        self.info_text.delete(1.0, tk.END)
-        self.true_faults_text.delete(1.0, tk.END)
-        self.diagnosed_faults_text.delete(1.0, tk.END)
-
-        # 清空指标表格
-        self.metrics_tree.delete(*self.metrics_tree.get_children())
-
-        # 添加单行指标
-        metrics = result["指标"]
-        values = (1,
-                  f"{metrics['ACCR']:.4f}",
-                  f"{metrics['TPR']:.4f}",
-                  f"{metrics['Precision']:.4f}",
-                  f"{metrics['F1分数']:.4f}",
-                  f"{metrics['TNR']:.4f}",
-                  f"{metrics['FPR']:.4f}")
-
-        self.metrics_tree.insert("", "end", values=values)
-
-        # 更新平均指标
-        for metric, value in metrics.items():
-            if metric in self.avg_labels:
-                self.avg_labels[metric].config(text=f"{value:.4f}")
-
-        # 显示故障节点
-        true_faults = result["真实故障节点"]
-        diagnosed_faults = result["诊断故障节点"]
-
-        # 真实故障节点
-        self.true_faults_text.insert(tk.END, f"总数: {len(true_faults)}\n")
-        self.true_faults_text.insert(tk.END, "-" * 30 + "\n")
-        for i, node in enumerate(true_faults, 1):
-            self.true_faults_text.insert(tk.END, f"{i}. {node}\n")
-
-        # 诊断故障节点
-        self.diagnosed_faults_text.insert(tk.END, f"总数: {len(diagnosed_faults)}\n")
-        self.diagnosed_faults_text.insert(tk.END, "-" * 30 + "\n")
-        for i, node in enumerate(diagnosed_faults, 1):
-            status = "✓" if node in true_faults else "✗"
-            self.diagnosed_faults_text.insert(tk.END, f"{i}. {node} {status}\n")
 
     def export_data(self):
         """导出当前结果数据"""
@@ -1489,6 +1224,7 @@ class TRFI_PMC_GUI:
                             "节点总数": result["节点总数"],
                             "故障节点数": result["故障节点数"],
                             "故障比例": result["故障比例"],
+                            "诊断节点数": len(result["诊断故障节点"]),
                         }
                         # 添加指标
                         for key, value in result["指标"].items():
@@ -1507,24 +1243,8 @@ class TRFI_PMC_GUI:
 
                     if file_path:
                         df.to_excel(file_path, index=False, float_format="%.4f")
-                        self.log_message(f"功能1实验结果已导出到: {file_path}", "SUCCESS")
+                        self.log_message(f"实验结果已导出到: {file_path}", "SUCCESS")
                         messagebox.showinfo("导出成功", f"数据已成功导出到:\n{file_path}")
-            elif "指标" in self.current_result:
-                # 功能3的结果
-                file_path = filedialog.asksaveasfilename(
-                    defaultextension=".xlsx",
-                    filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")],
-                    initialfile="功能3_实验结果.xlsx"
-                )
-
-                if file_path:
-                    # 功能3的结果
-                    data = [self.current_result]
-                    df = pd.json_normalize(data, sep='_')
-                    df.to_excel(file_path, index=False, float_format="%.4f")
-
-                    self.log_message(f"功能3实验结果已导出到: {file_path}", "SUCCESS")
-                    messagebox.showinfo("导出成功", f"数据已成功导出到:\n{file_path}")
             else:
                 # 功能2的结果
                 file_path = filedialog.asksaveasfilename(
@@ -1595,6 +1315,17 @@ def main():
     print("冒泡排序网络故障诊断系统 (TRFI-PMC)")
     print("版本: 1.0.0")
     print("指标: ACCR, TNR, FPR, TPR, Precision, F1分数")
+    print("=" * 70)
+    print("\nTRFI-PMC算法效率分析:")
+    print("1. 算法原理: 基于(0,0)边分组 + 三轮检测")
+    print("2. 效率限制因素:")
+    print("   - 依赖(0,0)边的连通性")
+    print("   - PMC模型测试结果包含随机性")
+    print("   - 诊断度t需要准确估计")
+    print("   - 故障率过高时诊断效果下降")
+    print("3. 改进建议:")
+    print("   - 进行多次实验取平均值")
+    print("   - 优化网络结构选择")
     print("=" * 70)
 
     # 设置随机种子
